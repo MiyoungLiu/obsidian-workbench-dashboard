@@ -2736,7 +2736,10 @@ class WorkbenchView extends ItemView {
       this.apply(t.file, (text) => {
         let r = lib.toggleDone(text, t.ref, cb.checked, lib.todayStr());
         if (!r.ok) return r;
-        if (cb.checked) r = lib.clearStageAny(r.text, r.text.split(/\r?\n/)[t.lineIndex], ["待办", "进行中"]);
+        if (cb.checked) {
+          const c2 = lib.clearStageAny(r.text, r.text.split(/\r?\n/)[t.lineIndex], ["待办", "进行中"]);
+          if (c2.ok) r = { ok: true, text: c2.text, changed: r.changed || c2.changed };
+        }
         return r;
       });
     });
@@ -2804,9 +2807,13 @@ class WorkbenchView extends ItemView {
         this.apply(file, (text) => {
           let r = lib.moveCard(text, t.ref, wantDone ? "已完成" : "待办");
           if (!r.ok) return r;
-          r = lib.toggleDone(r.text, t.ref, wantDone, lib.todayStr());
-          if (!r.ok) return r;
-          if (wantDone) r = lib.clearStageAny(r.text, r.text.split(/\r?\n/)[t.lineIndex], sN);
+          const r2 = lib.toggleDone(r.text, t.ref, wantDone, lib.todayStr());
+          if (!r2.ok) return r2;
+          r = { ok: true, text: r2.text, changed: r.changed || r2.changed };
+          if (wantDone) {
+            const c2 = lib.clearStageAny(r.text, r.text.split(/\r?\n/)[t.lineIndex], sN);
+            if (c2.ok) r = { ok: true, text: c2.text, changed: r.changed || c2.changed };
+          }
           return r;
         });
         return;
@@ -2815,7 +2822,10 @@ class WorkbenchView extends ItemView {
       this.apply(t.file, (text) => {
         let r = lib.toggleDone(text, t.ref, wantDone, lib.todayStr());
         if (!r.ok) return r;
-        if (wantDone) r = lib.clearStageAny(r.text, r.text.split(/\r?\n/)[t.lineIndex], sN);
+        if (wantDone) {
+          const c2 = lib.clearStageAny(r.text, r.text.split(/\r?\n/)[t.lineIndex], sN);
+          if (c2.ok) r = { ok: true, text: c2.text, changed: r.changed || c2.changed };
+        }
         return r;
       });
     });
@@ -2901,7 +2911,9 @@ class WorkbenchView extends ItemView {
       await this.apply(t0.file, (text) => {
         let r = lib.toggleDone(text, t0.ref, true, lib.todayStr());
         if (!r.ok) return r;
-        return lib.clearStageAny(r.text, r.text.split(/\r?\n/)[t0.lineIndex], sN);
+        const c2 = lib.clearStageAny(r.text, r.text.split(/\r?\n/)[t0.lineIndex], sN);
+        if (c2.ok) r = { ok: true, text: c2.text, changed: r.changed || c2.changed };
+        return r;
       });
       this.refresh();
       return;
