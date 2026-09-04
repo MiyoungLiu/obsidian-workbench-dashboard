@@ -1,0 +1,13 @@
+{
+  "id": "workbench-dashboard",
+  "name": "Lyra",
+  "version": "1.0.0",
+  "minAppVersion": "1.0.0",
+  "description": "Obsidian 内打开好看的工作台：任务汇总 + 看板拖拽 + 笔记卡片墙，实时读写",
+  "author": "MiyoungLiu",
+  "authorUrl": "https://github.com/MiyoungLiu",
+  "fundingUrl": {
+    "GitHub Sponsors": "https://github.com/sponsors/MiyoungLiu"
+  },
+  "isDesktopOnly": true
+}
