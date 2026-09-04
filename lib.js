@@ -266,7 +266,7 @@ export function discoverTagBoards(state) {
     const m = base.match(/^(.+?)项目看板\.md$/);
     if (!m) continue;
     const tag = m[1];
-    if (tag === "超分" || tag === "通用") continue;
+    if (tag === "通用") continue;
     if (!state.files[p].includes("tags include #" + tag)) continue;
     const meta = projectMeta(state.files[p]);
     out.push({ tag: tag, title: tag, file: p, type: meta.type, color: meta.color, start: meta.start, end: meta.end, desc: meta.desc, stages: meta.stages, curStage: meta.curStage });
@@ -275,22 +275,30 @@ export function discoverTagBoards(state) {
   return out;
 }
 // 自动聚合（2026-09-01 用户验收）：无项目标签的未完成任务 → 通用项目看板自动栏
-export const PROJECT_TAGS = ["超分"];
+// 项目标签动态发现：= discoverTagBoards(state) 的所有 tag（即 项目文档/*项目看板.md 的标签集合）。
+// 空 vault 没有项目看板文件时返回空集，所有任务进通用看板；不再硬编码任何私人项目名。
+export function projectTagsOf(state) {
+  if (!state || !state.files) return [];
+  return discoverTagBoards(state).map((b) => b.tag);
+}
 export const AUTO_BOARD_COL = "未入项目";
 export const AUTO_BOARD_EXCLUDE = ["项目文档/项目看板.md", "私人日程看板.md"];
 export function queryAutoTasks(state) {
+  const pt = projectTagsOf(state);
   return state.tasks
-    .filter((t) => !t.done && !t.tags.some((g) => PROJECT_TAGS.includes(g)) && !AUTO_BOARD_EXCLUDE.includes(t.file))
+    .filter((t) => !t.done && !t.tags.some((g) => pt.includes(g)) && !AUTO_BOARD_EXCLUDE.includes(t.file))
     .sort(byDue);
 }
 export function queryAutoDoneTasks(state) {
+  const pt = projectTagsOf(state);
   return state.tasks
-    .filter((t) => t.done && t.doneDate && !t.tags.some((g) => PROJECT_TAGS.includes(g)) && !AUTO_BOARD_EXCLUDE.includes(t.file));
+    .filter((t) => t.done && t.doneDate && !t.tags.some((g) => pt.includes(g)) && !AUTO_BOARD_EXCLUDE.includes(t.file));
 }
 // 通用看板：无项目标签的任务按阶段标签分栏（stageBoard 的"无标签"变体）
-// 规则同 stageBoard，但 has(t) = 任务不带任何 PROJECT_TAGS 项目标签、且不在 AUTO_BOARD_EXCLUDE
+// 规则同 stageBoard，但 has(t) = 任务不带任何项目标签（动态发现）、且不在 AUTO_BOARD_EXCLUDE
 export function autoBoard(state, stages) {
-  const has = (t) => !t.tags.some((g) => PROJECT_TAGS.includes(g)) && !AUTO_BOARD_EXCLUDE.includes(t.file);
+  const pt = projectTagsOf(state);
+  const has = (t) => !t.tags.some((g) => pt.includes(g)) && !AUTO_BOARD_EXCLUDE.includes(t.file);
   const cols = stages.map((s) => ({ heading: s.name, color: s.color, tasks: [] }));
   const doneCol = cols.find((c) => c.heading === "已完成") || cols[cols.length - 1];
   const tagged = new Set();

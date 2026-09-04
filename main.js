@@ -248,7 +248,7 @@ function discoverTagBoards(state) {
     const m = base.match(/^(.+?)项目看板\.md$/);
     if (!m) continue;
     const tag = m[1];
-    if (tag === "超分" || tag === "通用") continue;
+    if (tag === "通用") continue;
     if (!state.files[p].includes("tags include #" + tag)) continue;
     const meta = projectMeta(state.files[p]);
     out.push({ tag: tag, title: tag, file: p, type: meta.type, color: meta.color, start: meta.start, end: meta.end, desc: meta.desc, stages: meta.stages, curStage: meta.curStage });
@@ -257,20 +257,27 @@ function discoverTagBoards(state) {
   return out;
 }
 // 自动聚合（2026-09-01 用户验收）：无项目标签的未完成任务 → 通用项目看板自动栏
-const PROJECT_TAGS = ["超分"];
+// 项目标签动态发现：= discoverTagBoards(state) 的所有 tag。空 vault 无项目看板时返回空集。
+function projectTagsOf(state) {
+  if (!state || !state.files) return [];
+  return discoverTagBoards(state).map((b) => b.tag);
+}
 const AUTO_BOARD_COL = "未入项目";
 const AUTO_BOARD_EXCLUDE = ["项目文档/项目看板.md", "私人日程看板.md"];
 function queryAutoTasks(state) {
+  const pt = projectTagsOf(state);
   return state.tasks
-    .filter((t) => !t.done && !t.tags.some((g) => PROJECT_TAGS.includes(g)) && !AUTO_BOARD_EXCLUDE.includes(t.file))
+    .filter((t) => !t.done && !t.tags.some((g) => pt.includes(g)) && !AUTO_BOARD_EXCLUDE.includes(t.file))
     .sort(byDue);
 }
 function queryAutoDoneTasks(state) {
+  const pt = projectTagsOf(state);
   return state.tasks
-    .filter((t) => t.done && t.doneDate && !t.tags.some((g) => PROJECT_TAGS.includes(g)) && !AUTO_BOARD_EXCLUDE.includes(t.file));
+    .filter((t) => t.done && t.doneDate && !t.tags.some((g) => pt.includes(g)) && !AUTO_BOARD_EXCLUDE.includes(t.file));
 }
 function autoBoard(state, stages) {
-  const has = (t) => !t.tags.some((g) => PROJECT_TAGS.includes(g)) && !AUTO_BOARD_EXCLUDE.includes(t.file);
+  const pt = projectTagsOf(state);
+  const has = (t) => !t.tags.some((g) => pt.includes(g)) && !AUTO_BOARD_EXCLUDE.includes(t.file);
   const cols = stages.map((s) => ({ heading: s.name, color: s.color, tasks: [] }));
   const doneCol = cols.find((c) => c.heading === "已完成") || cols[cols.length - 1];
   const tagged = new Set();
@@ -764,7 +771,7 @@ function launchProjectPayload(clean, inspId, today, stages) {
   }
   return { path: "项目文档/" + c + "项目看板.md", fm: fm, tpl: parts.join("\n") };
 }
-const lib = { pad2, dateStr, todayStr, addDays, lunarCN, parseTaskLine, parseTasksForFile, noteInfo, collectState, queryToday, queryNext7, queryTodayDone, queryUnscheduled, querySuperBoard, kanbanBoard, CARD_FOLDERS, cardWall, toggleDone, setStage, setDue, moveCard, clearStage, weekStart, queryOverdue, todayStats, weekStats, heatmap, appendTaskLine, stageOf, filterByStage, calendarRange, ganttRows, noteDateOf, noteYearHeatmap, taskYearHeatmap, countdownStats, isoYearWeek, projectMeta, INSPO_COLS, INSPO_COL_IDS, normalizeInspo, inspAdd, inspMove, inspStar, inspDelete, inspGroup, parseInspoTags, INSPO_COL_CN, inspColFromCn, inspName, inspIdFromName, INSPO_STAGES, inspFileContent, parseInspoFile, inspFilePath, PROJECT_TAGS, AUTO_BOARD_COL, AUTO_BOARD_EXCLUDE, queryAutoTasks, queryAutoDoneTasks, autoBoard, queryTagBoard, discoverTagBoards, DEFAULT_PROJ_STAGES, DEFAULT_INSPO_STAGES, normStages, enabledStages, stageBoard, inspoStageNames, setStageAny, clearStageAny, inspSlug, launchProjectPayload };
+const lib = { pad2, dateStr, todayStr, addDays, lunarCN, parseTaskLine, parseTasksForFile, noteInfo, collectState, queryToday, queryNext7, queryTodayDone, queryUnscheduled, querySuperBoard, kanbanBoard, CARD_FOLDERS, cardWall, toggleDone, setStage, setDue, moveCard, clearStage, weekStart, queryOverdue, todayStats, weekStats, heatmap, appendTaskLine, stageOf, filterByStage, calendarRange, ganttRows, noteDateOf, noteYearHeatmap, taskYearHeatmap, countdownStats, isoYearWeek, projectMeta, INSPO_COLS, INSPO_COL_IDS, normalizeInspo, inspAdd, inspMove, inspStar, inspDelete, inspGroup, parseInspoTags, INSPO_COL_CN, inspColFromCn, inspName, inspIdFromName, INSPO_STAGES, inspFileContent, parseInspoFile, inspFilePath, projectTagsOf, AUTO_BOARD_COL, AUTO_BOARD_EXCLUDE, queryAutoTasks, queryAutoDoneTasks, autoBoard, queryTagBoard, discoverTagBoards, DEFAULT_PROJ_STAGES, DEFAULT_INSPO_STAGES, normStages, enabledStages, stageBoard, inspoStageNames, setStageAny, clearStageAny, inspSlug, launchProjectPayload };
 const VIEW_TYPE = "workbench-dashboard";
 // 手动看板（物理栏；拖拽 = 跨 ## 移动整行任务）
 const MANUAL_BOARDS = [
@@ -1261,7 +1268,8 @@ class WorkbenchPlugin extends Plugin {
     const legacy = (data && Array.isArray(data.inspirations)) ? data.inspirations : [];
     if (!legacy.length) return;
     try {
-      await this.app.vault.createDirectory((this.inspoDir || "1-灵感").replace(/\/+$/, ""));
+      const mkDir = this.app.vault.createFolder || this.app.vault.createDirectory;
+      await mkDir.call(this.app.vault, (this.inspoDir || "1-灵感").replace(/\/+$/, ""));
       for (const raw of legacy) {
         const it = lib.normalizeInspo(raw);
         if (!it.id || !it.title) continue;
@@ -1359,7 +1367,7 @@ class WorkbenchPlugin extends Plugin {
       ].join("") });
       c.createDiv({ text: "项目名（将创建 项目文档/<名字>项目看板.md）", cls: "wb-nb-hint" });
       const inp = c.createEl("input", { cls: "wb-nb-inp", type: "text" });
-      inp.placeholder = "例如：NSRR2";
+        inp.placeholder = "例如：我的项目";
       c.createDiv({ text: "类型", cls: "wb-nb-lb" });
       const typeSel = c.createEl("select", { cls: "wb-nb-sel" });
       typeSel.createEl("option", { text: "非阶段项目", value: "非阶段项目" });
@@ -1419,7 +1427,7 @@ class WorkbenchPlugin extends Plugin {
         m.close();
       const clean = String(name || "").replace(/[\\/:*?"<>|#\s]+/g, "").trim();
       if (!clean) { new Notice("项目看板：名称为空，未创建"); return; }
-      if (clean === "超分" || clean === "通用") { new Notice("项目看板：名称与内置项目冲突，未创建"); return; }
+      if (clean === "通用") { new Notice("项目看板：名称「通用」保留给自动通用看板，未创建"); return; }
       const type = typeSel.value;
       const cval = chosen || PRESET[0];
       const sval = dStart.value || "";
@@ -1469,7 +1477,10 @@ class WorkbenchPlugin extends Plugin {
         tplParts.push("");
       }
       const tpl = tplParts.join("\n");
-      app.vault.create(p, fm + tpl)
+      const mkDir = app.vault.createFolder || app.vault.createDirectory;
+      const ensureDir = app.vault.getAbstractFileByPath(this.projDir) ? Promise.resolve() : mkDir.call(app.vault, this.projDir);
+      ensureDir
+        .then(() => app.vault.create(p, fm + tpl))
         .then(() => { new Notice("已创建项目看板：" + p + "（工作台已自动发现）"); })
         .catch((er) => { new Notice("创建失败：" + String((er && er.message) || er)); });
       };
@@ -1629,7 +1640,7 @@ class WorkbenchView extends ItemView {
     const old = (this.inspoItems || []).map((it) => Object.assign({}, it));
     const out = fn(old);
     const dir = (this.plugin.inspoDir || "1-灵感").replace(/\/+$/, "");
-    if (!app.vault.getAbstractFileByPath(dir)) await app.vault.createDirectory(dir);
+    if (!app.vault.getAbstractFileByPath(dir)) { const mkDir = app.vault.createFolder || app.vault.createDirectory; await mkDir.call(app.vault, dir); }
     // 旧文件路径集合（用于找出被删除/改名的）
     const oldFiles = new Set(old.map((it) => it.file).filter(Boolean));
     // 遍历新列表：写每个灵感（新建或覆盖）
@@ -2045,9 +2056,34 @@ class WorkbenchView extends ItemView {
     const now = new Date();
     const p = kind === "weekly" ? (this.plugin.weeklyDir + "/" + lib.isoYearWeek(now) + ".md") : (this.plugin.dailyDir + "/" + lib.dateStr(now) + ".md");
     if (this.app.vault.getAbstractFileByPath(p)) { this.openNote(p); return; }
-    // 不存在 → 交给 Periodic Notes 按模板创建并打开
-    if (kind === "weekly") this.execCmd(["periodic-notes:open-weekly-note", "open-weekly-note"]);
-    else this.execCmd(["periodic-notes:open-daily-note", "open-daily-note"]);
+    // 不存在：优先交给 Periodic Notes 按模板创建；若未安装该插件，则自建一个基础日记文件（不依赖外部插件）
+    const pnIds = kind === "weekly" ? ["periodic-notes:open-weekly-note", "open-weekly-note"] : ["periodic-notes:open-daily-note", "open-daily-note"];
+    const cmds = this.app.commands.commands;
+    if (pnIds.some((id) => cmds[id])) {
+      this.execCmd(pnIds);
+    } else {
+      this.createPeriodicNoteFallback(kind, p);
+    }
+  }
+  async createPeriodicNoteFallback(kind, p) {
+    // 未安装 Periodic Notes 时自建基础日记/周记（不依赖外部插件）
+    const app = this.app;
+    const today = lib.dateStr(new Date());
+    const week = lib.isoYearWeek(new Date());
+    const isWeek = kind === "weekly";
+    const body = isWeek
+      ? "---\n周: " + week + "\n---\n\n## 本周目标\n- \n\n## 本周待办\n```tasks\nhide toolbar\nnot done\nhide task count\n```\n\n## 本周完成\n```tasks\nhide toolbar\ndone\nhide task count\n```\n\n## 回顾\n- \n"
+      : "---\n日期: " + today + "\n---\n\n## 今日待办（自动汇总）\n```tasks\nhide toolbar\nnot done\ndue before tomorrow\nhide task count\n```\n\n## 今天完成\n```tasks\nhide toolbar\ndone after yesterday\ndone before tomorrow\nhide task count\n```\n\n## 明日计划\n- \n\n## 学习与思考\n- \n";
+    try {
+      const dir = p.split("/").slice(0, -1).join("/");
+      if (dir && !app.vault.getAbstractFileByPath(dir)) { const mkDir = app.vault.createFolder || app.vault.createDirectory; await mkDir.call(app.vault, dir); }
+      await app.vault.create(p, body);
+      this.banner("已创建" + (isWeek ? "周记" : "日记") + "：" + p);
+      this.refresh();
+      this.openNote(p);
+    } catch (er) {
+      new Notice("创建失败：" + String((er && er.message) || er));
+    }
   }
   newTaskModal() {
     const app = this.app;
@@ -2062,7 +2098,7 @@ class WorkbenchView extends ItemView {
       const dt = c.createEl("input", { type: "date", cls: "wb-mmi" }); dt.value = lib.todayStr();
       const clr = c.createSpan({ text: "清除日期", cls: "wb-mmlink" });
       c.createDiv({ text: "标签（逗号分隔）", cls: "wb-mml" });
-      const tg = c.createEl("input", { type: "text", cls: "wb-mmi" }); tg.placeholder = "今日, NSRR";
+      const tg = c.createEl("input", { type: "text", cls: "wb-mmi" }); tg.placeholder = "例如：工作, 学习";
       const go = () => {
         const v = ti.value.trim();
         if (!v) { new Notice("任务：内容为空"); return; }
@@ -2092,6 +2128,7 @@ class WorkbenchView extends ItemView {
     const line = "- [ ] " + desc + tagPart + duePart;
     await this.apply(p, (text) => { return { ok: true, text: text.replace(/\s*$/, "") + "\n" + line, changed: true }; });
     this.banner("已新建任务：" + desc);
+    this.refresh();
     this.openNote(p);
   }
   focusCapture() {
@@ -2134,7 +2171,8 @@ class WorkbenchView extends ItemView {
   allBoardTasks() {
     const seen = {};
     const out = [];
-    for (const t of this.state.tasks) { if (t.tags.some((x) => x === "超分" || x === "进行中" || x === "待办")) { const k = t.file + ":" + t.lineIndex; if (!seen[k]) { seen[k] = 1; out.push(t); } } }
+    const pt = lib.projectTagsOf(this.state);
+    for (const t of this.state.tasks) { if (t.tags.some((x) => pt.includes(x) || x === "进行中" || x === "待办")) { const k = t.file + ":" + t.lineIndex; if (!seen[k]) { seen[k] = 1; out.push(t); } } }
     return out;
   }
   renderProject() {
@@ -2169,10 +2207,7 @@ class WorkbenchView extends ItemView {
   }
   renderProjectKanban(all) {
     const items = [];
-    // 超分（内置）：阶段来自其 frontmatter（若定义），否则全局启用阶段
-    const sfMeta = lib.projectMeta(this.state.files["项目文档/超分项目看板.md"] || "");
-    const sfBd = { tag: "超分", stages: sfMeta.stages };
-    items.push({ id: "proj-超分", title: "超分项目看板", build: (box) => this.renderTagBoardInto(box, "超分", "超分项目看板", sfBd) });
+    // 所有项目看板（含超分等）由 discoverTagBoards 自动发现：项目文档/*项目看板.md
     for (const bd of lib.discoverTagBoards(this.state)) {
       const safeId = "proj-" + bd.tag.replace(/[^\w\u4e00-\u9fff-]/g, "");
       items.push({ id: safeId, title: bd.title + "项目看板", build: (box) => this.renderTagBoardInto(box, bd.tag, bd.title + "项目看板", bd) });
