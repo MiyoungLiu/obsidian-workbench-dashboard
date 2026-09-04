@@ -1570,13 +1570,8 @@ class WorkbenchView extends ItemView {
   caresAbout(file) {
     if (!file || !file.path) return true;
     const p = file.path;
-    if (p.startsWith("0-收件箱/每日/") || p.startsWith("0-收件箱/每周/")) return true;
-    if (p.startsWith("项目文档/")) return true;
-    if (p === "私人日程看板.md") return true;
-    if (p.startsWith((this.plugin.inspoDir || "1-灵感") + "/")) return true;
-    if (p.split("/").some((seg) => seg.startsWith(".") || seg === "docs")) return false;
-    const folders = ["2-知识积累", "3-资料库", "笔记归档/每日", "笔记归档/每周"];
-    return folders.some((fd) => p.startsWith(fd + "/"));
+    if (p.split("/").some((seg) => seg.startsWith(".") || seg === "docs" || seg === "_templates" || seg === "_excalidraw" || seg === "_mindmap")) return false;
+    return p.endsWith(".md");
   }
   applyTheme(t) {
     if (!this.root) return;
