@@ -2079,7 +2079,6 @@ class WorkbenchView extends ItemView {
       if (dir && !app.vault.getAbstractFileByPath(dir)) { const mkDir = app.vault.createFolder || app.vault.createDirectory; await mkDir.call(app.vault, dir); }
       await app.vault.create(p, body);
       this.banner("已创建" + (isWeek ? "周记" : "日记") + "：" + p);
-      this.refresh();
       this.openNote(p);
     } catch (er) {
       new Notice("创建失败：" + String((er && er.message) || er));
@@ -2128,7 +2127,6 @@ class WorkbenchView extends ItemView {
     const line = "- [ ] " + desc + tagPart + duePart;
     await this.apply(p, (text) => { return { ok: true, text: text.replace(/\s*$/, "") + "\n" + line, changed: true }; });
     this.banner("已新建任务：" + desc);
-    this.refresh();
     this.openNote(p);
   }
   focusCapture() {
