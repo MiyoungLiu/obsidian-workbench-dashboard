@@ -1,9 +1,9 @@
 {
   "id": "workbench-dashboard",
   "name": "Lyra",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minAppVersion": "1.0.0",
-  "description": "Obsidian 内打开好看的工作台：任务汇总 + 看板拖拽 + 笔记卡片墙，实时读写",
+  "description": "A visual workbench inside your vault: task overview, kanban drag-and-drop, and note card wall, with real-time read/write.",
   "author": "MiyoungLiu",
   "authorUrl": "https://github.com/MiyoungLiu",
   "fundingUrl": {

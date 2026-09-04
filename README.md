@@ -1,74 +1,98 @@
-# Lyra（workbench-dashboard）
+# Lyra (workbench-dashboard)
 
-Obsidian 内打开一个好看的工作台：任务汇总 + 看板拖拽 + 笔记卡片墙，全部实时读写你的 Vault。
+A visual workbench inside your vault: task overview, kanban drag-and-drop, and a note card wall — all reading and writing your notes in real time.
 
-> 中文界面。仅桌面版（`isDesktopOnly: true`）。
+> UI is in Chinese. Desktop only.
 
-## 功能
+## Installation
 
-- **今日/未来 7 天/今日完成/待安排** 四个任务列表，一眼看清手头的事
-- **看板拖拽**：项目看板（按标签自动聚合）、通用看板（无项目标签的任务）、私人日程看板（手动栏），拖拽换栏自动改阶段标签
-- **笔记卡片墙**：按目录聚合笔记卡片
-- **番茄钟**：专注/休息计时
-- **灵感捕捉**：快速记录灵感，一键「立项」建项目看板，自动管理灵感生命周期（待办/进行中/已完成/已放弃）
-- **项目看板生命周期**：从灵感立项 → 看板 → 完成/放弃归档，反向同步
-- **主题**：多套配色（A/B/C…），专注模式（强/中/弱/隐）
-- **项目阶段自定义**：在设置里增删阶段（待办/进行中/已完成…），看板自动跟随
+### From the community plugin store
 
-## 安装
+1. Open **Settings → Third-party plugins** in the app.
+2. Turn **off** Restricted mode (Safe mode) if it is on.
+3. Click **Browse**, search for **Lyra**, then **Install** and **Enable**.
 
-### 方式一：社区插件商店（上架后）
+### Via [BRAT](https://github.com/TheDevOwen/obsidian42-brat)
 
-1. Obsidian → 设置 → 第三方插件 → 浏览，搜索 **Lyra** 安装启用
-2. 或装 [BRAT](https://github.com/TheDevOwen/obsidian42-brat) 后搜索 `workbench-dashboard`
+1. Install and enable the BRAT plugin.
+2. Open the command palette and run `BRAT: Search for plugins`.
+3. Search `workbench-dashboard`, then install.
 
-### 方式二：手动安装（上架前）
+### Manual install
 
-1. 下载本仓库 `main.js` 和 `manifest.json`
-2. 放入你的 Vault：`.obsidian/plugins/workbench-dashboard/`
+1. Download `main.js` and `manifest.json` from this repository (from a [release](https://github.com/MiyoungLiu/obsidian-workbench-dashboard/releases) or the `main` branch).
+2. Place them in your vault:
    ```
    .obsidian/plugins/workbench-dashboard/main.js
    .obsidian/plugins/workbench-dashboard/manifest.json
    ```
-3. Obsidian → 设置 → 第三方插件 → 关闭「安全模式」→ 启用 **Lyra**
+3. In **Settings → Third-party plugins**, turn off Restricted mode and **Enable** Lyra.
 
-> 本插件样式内联在 `main.js` 中，**无需** 单独的 `styles.css`。
-> `lib.js` 是源码（纯函数，供 node 单元测试用），运行时由 `main.js` 内联，手动安装**不需要** 复制它。
+> Styles are inlined in `main.js`; there is **no** separate `styles.css`.
+> `lib.js` is source-only (pure functions used by the node unit tests) and is inlined into `main.js` at build time — you do **not** need it to run the plugin.
 
-## 配置
+## Usage
 
-设置项在 设置 → Lyra（workbench-dashboard）：
+Open the workbench with the command **`Lyra: Open workbench`** (`open-workbench`) or its ribbon button.
 
-| 分组 | 设置项 | 说明 |
-|---|---|---|
-| 外观 | 工作台标题 | 顶栏 + 标签页显示文本 |
-| 外观 | 主题 | 主色调（也可在看板标题上 A/B/C 切换） |
-| 外观 | 专注模式 | 背景氛围强度（强/中/弱/隐） |
-| 目录存储 | 灵感捕捉存储目录 | 灵感主页/每项一行 Markdown |
-| 目录存储 | 每日/每周笔记目录 | 新建日记/周记的目录 |
-| 目录存储 | 项目看板目录 | 新建项目看板写入的目录 |
-| 番茄钟 | 专注/休息时间 | 分钟（专注 1–120，休息 1–60） |
-| 倒计时 | 目标日期 | 首页倒计时卡片目标（YYYY-MM-DD） |
-| 项目阶段 | 增删阶段 | 自定义看板阶段（默认 待办/进行中/已完成） |
+The workbench has these areas:
 
-## 命令
+- **Task lists** — Today / Next 7 days / Done today / Unscheduled. Check a task to complete it; the plugin updates the source note in place.
+- **Boards (kanban)**
+  - *Project boards* aggregate tasks by project tag (e.g. `#superres`).
+  - *General board* collects tasks that have no project tag, grouped by stage tag.
+  - *Personal schedule board* uses manual columns.
+  - Drag a card between columns to change its stage; checking a card completes it (and clears stage tags).
+- **Note card wall** — groups notes into cards by folder. Click a card to open the note.
+- **Pomodoro** — focus / rest timer.
+- **Inspo capture** — quick-capture an idea; one click on **立项 (Launch)** turns it into a project board and tracks its lifecycle (todo / doing / done / dropped).
+- **Themes & focus mode** — switch palettes (A/B/C…) and ambient intensity from the top bar.
 
-- `Lyra: 打开工作台`（`open-workbench`）
-- `Lyra: 新建项目看板（模板）`（`wb-new-project-board`）
+Create a new project board with the command **`Lyra: New project board (template)`** (`wb-new-project-board`).
 
-## 依赖
+### Settings
 
-无强制依赖。以下核心插件存在时体验更佳（非必需）：
+Under **Settings → Lyra** you can configure: workbench title, theme, focus mode, storage folders (inspo / daily / weekly / project boards), pomodoro durations, countdown target date, and the list of project stages (default: todo / doing / done).
 
-- `periodic-notes`（每日/每周笔记）
-- `templater-obsidian`（模板）
-- `obsidian-tasks-plugin`（任务查询，看板会自动适配）
+## Data access & security
 
-## 开发
+This plugin is **local-only**. It performs no network requests and uploads no data.
 
-- `main.js`：Obsidian 插件主体（UI + 事件 + Vault 读写），内联了 `lib.js` 的纯函数副本（Obsidian 1.12 无法 `require("./lib.js")`）
-- `lib.js`：纯函数（任务解析/看板聚合/灵感生命周期/项目看板生成），供 node 单元测试
-- 测试：`node .dev/lib.test.js`（独立仓库不含 `.dev/`，见源仓库）
+It reads the vault to build the workbench in real time:
+
+- **Vault enumeration** — it lists vault files (`vault.getFiles` / `getMarkdownFiles`) to discover notes, project boards, and inspo items, and parses their task lines. This is how the task lists, boards, and card wall stay up to date as you edit notes elsewhere.
+- **Read/write of note content** — checking/completing a task, dragging a card, or launching a project writes back to the *source note* (e.g. toggling `[x]`, adding/removing a stage tag). It only edits the specific task lines it is acting on.
+
+All reads and writes stay inside your local vault. Nothing leaves your machine.
+
+## Optional integrations
+
+No hard dependencies. These plugins improve the experience if present (all optional):
+
+- `periodic-notes` — daily/weekly notes
+- `templater-obsidian` — templates
+- `obsidian-tasks-plugin` — task queries (boards adapt automatically)
+
+## Development
+
+- `main.js` — plugin body (UI, events, vault read/write). It inlines a copy of `lib.js`'s pure functions (the desktop build cannot `require("./lib.js")`).
+- `lib.js` — pure functions (task parsing, board aggregation, inspo lifecycle, project-board generation), used by the node unit tests.
+- Tests: `node .dev/lib.test.js` (the published repo does not ship `.dev/`; see the source vault).
+
+## 中文说明
+
+在库内打开一个可视化工作台：任务汇总、看板拖拽、笔记卡片墙，全部实时读写你的笔记。界面为中文，仅桌面版。
+
+### 安装
+- **社区插件商店**：设置 → 第三方插件 → 浏览，搜 **Lyra** → 安装 → 启用。
+- **BRAT**：装 BRAT 后命令面板 `BRAT: Search for plugins`，搜 `workbench-dashboard`。
+- **手动**：下载 `main.js` + `manifest.json` 放进 `.obsidian/plugins/workbench-dashboard/`，关闭安全模式后启用。
+
+### 使用
+命令 **`Lyra: 打开工作台`** 打开。区域包括：任务列表（今日/未来7天/今日完成/待安排）、看板（项目/通用/私人日程，拖拽换栏改阶段标签）、笔记卡片墙、番茄钟、灵感捕捉（一键「立项」建项目看板并管理生命周期）。命令 **`Lyra: 新建项目看板（模板）`** 新建看板。
+
+### 数据与隐私
+本插件**纯本地**，无网络请求、不上传任何数据。它会枚举库内文件以实时构建工作台（任务列表/看板/卡片墙），并在你勾选/拖拽/立项时**写回源笔记**的对应任务行。所有读写都在本地 vault 内完成。
 
 ## License
 
