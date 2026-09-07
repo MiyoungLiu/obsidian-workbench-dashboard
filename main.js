@@ -1,6 +1,6 @@
 // main.js — Obsidian 工作台插件（UI 层）。
 // 纯逻辑已内联 lib.js（Obsidian 1.12 加载器只能用注入 require 到打包代码，不能 require("./lib.js")）；磁盘上的 lib.js 是 node 测试源；本层负责：注册视图/命令、DOM 渲染、vault 事件、写回。
-const { Plugin, ItemView, Modal, Notice, PluginSettingTab, Setting } = require("obsidian");
+const { Plugin, ItemView, Modal, Notice, PluginSettingTab, Setting, FuzzySuggestModal } = require("obsidian");
 // lib.js — 工作台纯逻辑层（零 obsidian 依赖，ESM）
 // 纪律：所有函数纯函数；同样的输入必须得到同样的输出；不碰文件系统。
 // ---------- 日期 ----------
@@ -829,6 +829,8 @@ const CSS = `
 .wb-root[data-glow="mid"]::before{ opacity:.55; }
 .wb-root[data-glow="high"]::before{ opacity:1; }
 .wb-root > *{ position:relative; z-index:1; }
+.wb-banner-tip{ position:absolute; bottom:6px; left:50%; transform:translateX(-50%); font-size:10px; color:var(--text); background:rgba(0,0,0,.4); border-radius:5px; padding:2px 8px; pointer-events:none; white-space:nowrap; opacity:0; transition:opacity .15s; }
+.wb-banner:hover .wb-banner-tip{ opacity:1; }
 .wb-pad{ padding:0 16px 40px; }
 .wb-root[data-theme="b"] .wb-title{ font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif; }
 .wb-head{ display:flex; align-items:center; gap:14px; padding:14px 2px; flex-wrap:wrap; flex:none; }
@@ -1242,6 +1244,7 @@ class WorkbenchPlugin extends Plugin {
     if (data && data.inspoFilter) this.inspoFilter = data.inspoFilter;
     if (data && data.glow) this.glow = data.glow;
     if (data && data.countdownTarget) this.countdownTarget = data.countdownTarget;
+    if (data && data.countdownLabel) this.countdownLabel = data.countdownLabel;
     this.inspoDir = (data && data.inspoDir) || "1-灵感";
     this.dailyDir = (data && data.dailyDir) || "0-收件箱/每日";
     this.weeklyDir = (data && data.weeklyDir) || "0-收件箱/每周";
@@ -1310,7 +1313,7 @@ class WorkbenchPlugin extends Plugin {
   setProjStage(v) { this.projStage = v; this.saveBanner(); this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); }); }
   setPage(p) { this.page = p; this.saveBanner(); this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); }); }
   setInspoFilter(v) { this.inspoFilter = v; this.saveInspoData(); this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); }); }
-  saveInspoData() { this.saveData({ theme: this.theme, areaH: this.areaH, page: this.page, projView: this.projView, projStage: this.projStage, banner: this.banner, pomo: this.pomo, inspirations: this.inspirations, inspoFilter: this.inspoFilter, glow: this.glow, countdownTarget: this.countdownTarget, inspoDir: this.inspoDir, dailyDir: this.dailyDir, weeklyDir: this.weeklyDir, projDir: this.projDir, wbTitle: this.wbTitle, projStages: this.projStages, inspoStages: this.inspoStages }); }
+  saveInspoData() { this.saveData({ theme: this.theme, areaH: this.areaH, page: this.page, projView: this.projView, projStage: this.projStage, banner: this.banner, pomo: this.pomo, inspirations: this.inspirations, inspoFilter: this.inspoFilter, glow: this.glow, countdownTarget: this.countdownTarget, countdownLabel: this.countdownLabel, inspoDir: this.inspoDir, dailyDir: this.dailyDir, weeklyDir: this.weeklyDir, projDir: this.projDir, wbTitle: this.wbTitle, projStages: this.projStages, inspoStages: this.inspoStages }); }
   // 项目阶段（归一化，4-6 槽，默认 3 启用）
   getProjStages() { return lib.normStages(this.projStages, 6, lib.DEFAULT_PROJ_STAGES); }
   // 项目阶段——仅启用
@@ -1520,7 +1523,6 @@ class WorkbenchView extends ItemView {
     }
   }
   applyGridToContent() {
-    // 把背景网格铺到 contentEl（填满整个 leaf 滚动区），避免根节点高度不足时露出灰色
     const t = this.plugin.theme || "a";
     const bg = t === "b" ? "#f5f1e8" : t === "c" ? "#ffffff" : "#0d1117";
     const ce = this.contentEl;
@@ -1578,6 +1580,16 @@ class WorkbenchView extends ItemView {
     this.root.setAttribute("data-theme", t);
     this.root.querySelectorAll(".wb-switch .wb-btn").forEach((b) => { b.classList.toggle("on", b.textContent.toLowerCase() === t); });
     this.applyGridToContent();
+  }
+  _bannerOf(t) {
+    if (!this.plugin.banner || typeof this.plugin.banner === "object" && this.plugin.banner.dataUrl != null && !this.plugin.banner.a) {
+      // 旧格式迁移：{dataUrl, offsetY} → {a:{...}, b:{}, c:{}}
+      const old = this.plugin.banner;
+      this.plugin.banner = { a: { dataUrl: old.dataUrl, offsetY: old.offsetY || 0, scale: 1 }, b: { dataUrl: null, offsetY: 0, scale: 1 }, c: { dataUrl: null, offsetY: 0, scale: 1 } };
+    }
+    this.plugin.banner = this.plugin.banner || {};
+    this.plugin.banner[t] = this.plugin.banner[t] || { dataUrl: null, offsetY: 0, scale: 1 };
+    return this.plugin.banner[t];
   }
   async gatherFiles() {
     const out = [];
@@ -1939,11 +1951,16 @@ class WorkbenchView extends ItemView {
     this._metaEl.textContent = meta;
   }
   renderBanner() {
-    const b = this.plugin.banner;
+    const t = this.plugin.theme || "a";
+    const b = this._bannerOf(t);
     const bar = this.pad.createDiv({ cls: "wb-banner" });
     const img = bar.createEl("img", { cls: "wb-banner-img" + (b.dataUrl ? "" : " hide") });
-    if (b.dataUrl) img.src = b.dataUrl;
-    if (b.dataUrl && b.offsetY) img.style.transform = "translateY(" + b.offsetY + "px)";
+    if (b.dataUrl) {
+      img.src = b.dataUrl;
+      const sc = b.scale || 1;
+      img.style.transform = "translateY(" + (b.offsetY || 0) + "px) scale(" + sc + ")";
+      img.style.transformOrigin = "center top";
+    }
     if (!b.dataUrl) bar.createDiv({ text: "[ 封面 ]  ·  悬停右上角按钮插入封面图片", cls: "wb-banner-ph" });
     const ctl = bar.createDiv({ cls: "wb-banner-bar" });
     const pick = ctl.createSpan({ text: b.dataUrl ? "换图" : "插入封面", cls: "wb-banner-btn" });
@@ -1953,28 +1970,32 @@ class WorkbenchView extends ItemView {
       const file = fi.files && fi.files[0];
       if (!file) return;
       const rd = new FileReader();
-      rd.onload = () => { this.plugin.banner.dataUrl = String(rd.result); this.plugin.banner.offsetY = 0; this.plugin.saveBanner(); this.render(); };
+      rd.onload = () => { b.dataUrl = String(rd.result); b.offsetY = 0; b.scale = 1; this.plugin.saveBanner(); this.render(); };
       rd.readAsDataURL(file);
     });
     if (b.dataUrl) {
+      const reset = ctl.createSpan({ text: "重置", cls: "wb-banner-btn" });
+      reset.title = "重置本主题封面位置/缩放";
+      reset.addEventListener("click", () => { b.offsetY = 0; b.scale = 1; this.plugin.saveBanner(); this.render(); });
       const rm = ctl.createSpan({ text: "移除", cls: "wb-banner-btn" });
-      rm.addEventListener("click", () => { this.plugin.banner.dataUrl = null; this.plugin.banner.offsetY = 0; this.plugin.saveBanner(); this.render(); });
-      // 上下拖调位置（带 4px 阈值：轻点不触发拖拽，只有真正划动才移动）
+      rm.addEventListener("click", () => { b.dataUrl = null; b.offsetY = 0; b.scale = 1; this.plugin.saveBanner(); this.render(); });
+      const tip = bar.createDiv({ text: "左键拖动移动 · 右键放大 · Shift+右键缩小 · 自动保存", cls: "wb-banner-tip" });
+      // 左键拖调位置（带 4px 阈值：轻点不触发拖拽，只有真正划动才移动）
       img.addEventListener("mousedown", (e) => {
         if (e.button !== 0) return;
         e.preventDefault();
         const startY = e.clientY;
-        const startOff = this.plugin.banner.offsetY || 0;
+        const startOff = b.offsetY || 0;
         let dragging = false;
-        const apply = (off) => {
+        const apply = (off, sc) => {
           const cur = this.root && this.root.querySelector(".wb-banner-img");
-          if (cur) cur.style.transform = "translateY(" + off + "px)";
+          if (cur) cur.style.transform = "translateY(" + off + "px) scale(" + (sc || (b.scale || 1)) + ")";
         };
         const move = (ev) => {
           const dy = ev.clientY - startY;
           if (!dragging && Math.abs(dy) < 4) return;
           dragging = true;
-          this.plugin.banner.offsetY = startOff + dy;
+          b.offsetY = startOff + dy;
           apply(startOff + dy);
         };
         const up = () => {
@@ -1984,6 +2005,15 @@ class WorkbenchView extends ItemView {
         };
         document.addEventListener("mousemove", move);
         document.addEventListener("mouseup", up);
+      });
+      // 右键缩放（preventDefault 避免菜单，与页面滚轮滚动错开）：右键=放大，Shift+右键=缩小
+      bar.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        b.scale = e.shiftKey ? Math.max(0.5, (b.scale || 1) - 0.1) : Math.min(3, (b.scale || 1) + 0.1);
+        const cur = this.root && this.root.querySelector(".wb-banner-img");
+        if (cur) cur.style.transform = "translateY(" + (b.offsetY || 0) + "px) scale(" + b.scale + ")";
+        clearTimeout(this._bannerZoomTimer);
+        this._bannerZoomTimer = setTimeout(() => this.plugin.saveBanner(), 300);
       });
     }
   }
@@ -2121,8 +2151,8 @@ class WorkbenchView extends ItemView {
     const duePart = due ? " 📅 " + due : "";
     const line = "- [ ] " + desc + tagPart + duePart;
     await this.apply(p, (text) => { return { ok: true, text: text.replace(/\s*$/, "") + "\n" + line, changed: true }; });
+    this.refresh().catch(() => {});
     this.banner("已新建任务：" + desc);
-    this.openNote(p);
   }
   focusCapture() {
     const inp = this.root && this.root.querySelector(".wb-capture-inp");
@@ -2506,11 +2536,12 @@ class WorkbenchView extends ItemView {
   renderCountdown(card) {
     const year = new Date().getFullYear();
     const target = this.plugin.countdownTarget && /^\d{4}-\d{2}-\d{2}$/.test(this.plugin.countdownTarget) ? this.plugin.countdownTarget : (year + 1) + "-01-01";
+    const label = (this.plugin.countdownLabel || "").trim();
     const head = card.createDiv({ cls: "wb-cd-head" });
-    head.createSpan({ text: "倒计时", cls: "wb-cd-title" });
+    head.createSpan({ text: label ? label : "倒计时", cls: "wb-cd-title" });
     head.createSpan({ text: "剩余天数", cls: "wb-cd-tag" });
     const lbl = card.createDiv({ cls: "wb-cd-lbl" });
-    lbl.createSpan({ text: "距离 " + (target.endsWith("-01-01") ? target.slice(0, 4) + " 年" : target) });
+    lbl.createSpan({ text: "距离 " + (label ? label + " " : "") + target });
     const big = card.createDiv({ cls: "wb-cd-big" });
     big.createSpan({ text: String(lib.countdownStats(target).daysLeft), cls: "wb-cd-num" });
     big.createSpan({ text: "天", cls: "wb-cd-unit" });
@@ -3109,11 +3140,19 @@ class WorkbenchSettingTab extends PluginSettingTab {
     });
     // ===== 倒计时 =====
     new Setting(c).setName("倒计时").setHeading();
+    new Setting(c).setName("事件名称").setDesc("倒计时卡片显示的标题（如「国庆」「年终总结」），留空则显示「倒计时」").addText((t) => {
+      t.setPlaceholder("例：国庆").setValue(this.plugin.countdownLabel || "").onChange(async (v) => {
+        this.plugin.countdownLabel = v.trim();
+        this.plugin.saveInspoData();
+        this.plugin.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); });
+      });
+    });
     new Setting(c).setName("目标日期").setDesc("首页倒计时卡片的目标（留空 = 明年 1 月 1 日），格式 YYYY-MM-DD").addText((t) => {
       t.setPlaceholder("例：2027-06-01").setValue(this.plugin.countdownTarget || "").onChange(async (v) => {
         const s = v.trim();
         this.plugin.countdownTarget = /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
         this.plugin.saveInspoData();
+        this.plugin.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); });
       });
     });
     // ===== 项目阶段配置 =====
