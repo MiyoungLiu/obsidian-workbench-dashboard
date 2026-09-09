@@ -1224,7 +1224,9 @@ class WorkbenchPlugin extends Plugin {
   projView = "kanban";
   projStage = "all";
   wbTitle = "Lyra";
-  banner = { dataUrl: null, offsetY: 0 };
+  wbEyebrow = "MIYOUNG · WORKBENCH";
+  banner = { a: { dataUrl: null, offsetY: 0, scale: 1 }, b: { dataUrl: null, offsetY: 0, scale: 1 }, c: { dataUrl: null, offsetY: 0, scale: 1 } };
+  pomo = { work: 25, rest: 5, mode: "work", left: 25 * 60, running: false };
   inspirations = [];
   inspoFilter = "all";
   glow = "high";
@@ -1238,8 +1240,18 @@ class WorkbenchPlugin extends Plugin {
     if (data && data.page) this.page = data.page;
     if (data && data.projView) this.projView = data.projView;
     if (data && data.projStage) this.projStage = data.projStage;
-    if (data && data.banner) this.banner = data.banner;
-    if (data && data.pomo) this.pomo = data.pomo;
+    if (data && data.banner) {
+      // 安全迁移:清理混合脏数据(顶层 dataUrl/offsetY 字段),View 的 _bannerOf 再做完整规范化
+      const b = data.banner;
+      if (b && typeof b === "object" && "dataUrl" in b) {
+        this.banner = { a: (b.a && typeof b.a === "object") ? b.a : { dataUrl: b.dataUrl || null, offsetY: b.offsetY || 0, scale: 1 }, b: b.b || { dataUrl: null, offsetY: 0, scale: 1 }, c: b.c || { dataUrl: null, offsetY: 0, scale: 1 } };
+      } else if (b && typeof b === "object" && b.a) {
+        this.banner = { a: b.a, b: b.b || { dataUrl: null, offsetY: 0, scale: 1 }, c: b.c || { dataUrl: null, offsetY: 0, scale: 1 } };
+      } else {
+        this.banner = b;
+      }
+    }
+    if (data && data.pomo) this.pomo = Object.assign({}, this.pomo, data.pomo);
     if (data && data.inspirations) this.inspirations = data.inspirations;
     if (data && data.inspoFilter) this.inspoFilter = data.inspoFilter;
     if (data && data.glow) this.glow = data.glow;
@@ -1250,6 +1262,7 @@ class WorkbenchPlugin extends Plugin {
     this.weeklyDir = (data && data.weeklyDir) || "0-收件箱/每周";
     this.projDir = (data && data.projDir) || "项目文档";
     this.wbTitle = (data && data.wbTitle) || "Lyra";
+    this.wbEyebrow = (data && data.wbEyebrow != null) ? data.wbEyebrow : "MIYOUNG · WORKBENCH";
     this.projStages = (data && data.projStages) || null;
     this.inspoStages = (data && data.inspoStages) || null;
     if (!this.inspoStages) {
@@ -1308,12 +1321,17 @@ class WorkbenchPlugin extends Plugin {
     this.saveInspoData();
     this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) { l.view.updateTitle(t); l.view.render(); } });
   }
+  setWbEyebrow(t) {
+    this.wbEyebrow = t;
+    this.saveInspoData();
+    this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); });
+  }
   saveBanner() { this.saveInspoData(); }
   setProjView(v) { this.projView = v; this.saveBanner(); this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); }); }
   setProjStage(v) { this.projStage = v; this.saveBanner(); this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); }); }
   setPage(p) { this.page = p; this.saveBanner(); this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); }); }
   setInspoFilter(v) { this.inspoFilter = v; this.saveInspoData(); this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); }); }
-  saveInspoData() { this.saveData({ theme: this.theme, areaH: this.areaH, page: this.page, projView: this.projView, projStage: this.projStage, banner: this.banner, pomo: this.pomo, inspirations: this.inspirations, inspoFilter: this.inspoFilter, glow: this.glow, countdownTarget: this.countdownTarget, countdownLabel: this.countdownLabel, inspoDir: this.inspoDir, dailyDir: this.dailyDir, weeklyDir: this.weeklyDir, projDir: this.projDir, wbTitle: this.wbTitle, projStages: this.projStages, inspoStages: this.inspoStages }); }
+  saveInspoData() { this.saveData({ theme: this.theme, areaH: this.areaH, page: this.page, projView: this.projView, projStage: this.projStage, banner: this.banner, pomo: this.pomo, inspirations: this.inspirations, inspoFilter: this.inspoFilter, glow: this.glow, countdownTarget: this.countdownTarget, countdownLabel: this.countdownLabel, inspoDir: this.inspoDir, dailyDir: this.dailyDir, weeklyDir: this.weeklyDir, projDir: this.projDir, wbTitle: this.wbTitle, wbEyebrow: this.wbEyebrow, projStages: this.projStages, inspoStages: this.inspoStages }); }
   // 项目阶段（归一化，4-6 槽，默认 3 启用）
   getProjStages() { return lib.normStages(this.projStages, 6, lib.DEFAULT_PROJ_STAGES); }
   // 项目阶段——仅启用
@@ -1581,14 +1599,39 @@ class WorkbenchView extends ItemView {
     this.root.querySelectorAll(".wb-switch .wb-btn").forEach((b) => { b.classList.toggle("on", b.textContent.toLowerCase() === t); });
     this.applyGridToContent();
   }
-  _bannerOf(t) {
-    if (!this.plugin.banner || typeof this.plugin.banner === "object" && this.plugin.banner.dataUrl != null && !this.plugin.banner.a) {
-      // 旧格式迁移：{dataUrl, offsetY} → {a:{...}, b:{}, c:{}}
-      const old = this.plugin.banner;
-      this.plugin.banner = { a: { dataUrl: old.dataUrl, offsetY: old.offsetY || 0, scale: 1 }, b: { dataUrl: null, offsetY: 0, scale: 1 }, c: { dataUrl: null, offsetY: 0, scale: 1 } };
+  // 迁移 banner 到按主题新格式 {a:{dataUrl,offsetY,scale}, b, c}
+  // 兼容三种历史形态:
+  //  1. 旧格式 {dataUrl, offsetY}(顶层有 dataUrl 字段,无 a)
+  //  2. 混合脏数据 {dataUrl, offsetY, a, b, c}(既有顶层又有主题)
+  //  3. 已是新格式 {a, b, c}
+  _migrateBanner(b) {
+    if (!b || typeof b !== "object") return this._emptyBanner();
+    // 已是纯新格式(顶层无 dataUrl 字段)
+    if (b.a && !("dataUrl" in b)) {
+      return { a: this._normSlot(b.a), b: this._normSlot(b.b), c: this._normSlot(b.c) };
     }
-    this.plugin.banner = this.plugin.banner || {};
-    this.plugin.banner[t] = this.plugin.banner[t] || { dataUrl: null, offsetY: 0, scale: 1 };
+    // 旧格式或混合脏数据:取顶层 dataUrl/offsetY 作为 a 的值,丢弃顶层字段
+    const legacyDataUrl = ("dataUrl" in b) ? b.dataUrl : null;
+    const legacyOffset = ("offsetY" in b) ? (b.offsetY || 0) : 0;
+    const a = (b.a && typeof b.a === "object") ? b.a : { dataUrl: legacyDataUrl, offsetY: legacyOffset, scale: 1 };
+    return {
+      a: this._normSlot(a),
+      b: this._normSlot(b.b),
+      c: this._normSlot(b.c),
+    };
+  }
+  _normSlot(s) {
+    const o = (s && typeof s === "object") ? s : {};
+    return { dataUrl: o.dataUrl || null, offsetY: o.offsetY || 0, scale: o.scale || 1 };
+  }
+  _emptyBanner() {
+    return { a: { dataUrl: null, offsetY: 0, scale: 1 }, b: { dataUrl: null, offsetY: 0, scale: 1 }, c: { dataUrl: null, offsetY: 0, scale: 1 } };
+  }
+  _bannerOf(t) {
+    if (!this.plugin.banner || typeof this.plugin.banner !== "object") this.plugin.banner = this._emptyBanner();
+    // 运行时兜底:若仍是旧/混合形态,迁移
+    if (!this.plugin.banner.a || ("dataUrl" in this.plugin.banner)) this.plugin.banner = this._migrateBanner(this.plugin.banner);
+    this.plugin.banner[t] = this._normSlot(this.plugin.banner[t]);
     return this.plugin.banner[t];
   }
   async gatherFiles() {
@@ -2022,7 +2065,8 @@ class WorkbenchView extends ItemView {
     const h = this.pad.createDiv({ cls: "wb-head" });
     // 左：标题（居中块）
     const tl = h.createSpan({ cls: "wb-tl" });
-    tl.createDiv({ text: "MIYOUNG · WORKBENCH", cls: "wb-eyebrow" });
+    const eyebrow = (this.plugin.wbEyebrow || "").trim();
+    if (eyebrow) tl.createDiv({ text: eyebrow, cls: "wb-eyebrow" });
     const titleText = this.plugin.wbTitle || "Lyra";
     const hasCjk = /[\u4e00-\u9fff\u3400-\u4dbf]/.test(titleText);
     tl.createDiv({ text: titleText, cls: "wb-title" + (hasCjk ? " wb-title-cjk" : "") });
@@ -3081,6 +3125,11 @@ class WorkbenchSettingTab extends PluginSettingTab {
     new Setting(c).setName("工作台名称").setDesc("界面顶部 + 标签页显示的标题文字").addText((t) => {
       t.setPlaceholder("Lyra").setValue(this.plugin.wbTitle || "Lyra").onChange(async (v) => {
         this.plugin.setWbTitle(v.trim() || "Lyra");
+      });
+    });
+    new Setting(c).setName("顶部小标题").setDesc("大标题上方的小字（留空 = 不显示该行）").addText((t) => {
+      t.setPlaceholder("MIYOUNG · WORKBENCH").setValue(this.plugin.wbEyebrow || "").onChange(async (v) => {
+        this.plugin.setWbEyebrow(v.trim());
       });
     });
     new Setting(c).setName("主题").setDesc("界面配色（也可在界面右上角 A/B/C 切换）").addDropdown((d) => {
