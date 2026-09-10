@@ -1,7 +1,7 @@
 ﻿{
   "id": "workbench-dashboard",
   "name": "Lyra",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "minAppVersion": "1.0.0",
   "description": "A visual workbench inside your vault: task overview, kanban drag-and-drop, and note card wall, with real-time read/write.",
   "author": "MiyoungLiu",

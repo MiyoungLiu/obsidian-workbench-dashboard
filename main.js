@@ -901,6 +901,8 @@ const CSS = `
 .wb-wcard:hover{ border-color:color-mix(in srgb, var(--accent) 45%, var(--border)); transform:translateY(-1px); }
 .wb-wname{ font-size:12.5px; font-weight:600; display:block; margin-bottom:4px; }
 .wb-wsub{ font-size:11px; color:var(--muted); }
+.wb-starmap{ width:100%; height:min(720px, calc(100vh - 230px)); min-height:380px; border-radius:14px; overflow:hidden; background:#070b14; margin-top:6px; }
+.wb-starmap canvas{ display:block; width:100%; height:100%; }
 .wb-empty{ color:var(--muted); font-size:12px; }
 .wb-picker{ position:absolute; z-index:10; display:flex; gap:6px; align-items:center;
   background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:6px; box-shadow:var(--shadow); }
@@ -1223,6 +1225,7 @@ class WorkbenchPlugin extends Plugin {
   page = "home";
   projView = "kanban";
   projStage = "all";
+  wallView = "wall";
   wbTitle = "Lyra";
   wbEyebrow = "MIYOUNG · WORKBENCH";
   banner = { a: { dataUrl: null, offsetY: 0, scale: 1 }, b: { dataUrl: null, offsetY: 0, scale: 1 }, c: { dataUrl: null, offsetY: 0, scale: 1 } };
@@ -1240,6 +1243,7 @@ class WorkbenchPlugin extends Plugin {
     if (data && data.page) this.page = data.page;
     if (data && data.projView) this.projView = data.projView;
     if (data && data.projStage) this.projStage = data.projStage;
+    if (data && data.wallView) this.wallView = data.wallView;
     if (data && data.banner) {
       // 安全迁移:清理混合脏数据(顶层 dataUrl/offsetY 字段),View 的 _bannerOf 再做完整规范化
       const b = data.banner;
@@ -1329,9 +1333,10 @@ class WorkbenchPlugin extends Plugin {
   saveBanner() { this.saveInspoData(); }
   setProjView(v) { this.projView = v; this.saveBanner(); this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); }); }
   setProjStage(v) { this.projStage = v; this.saveBanner(); this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); }); }
+  setWallView(v) { this.wallView = v; this.saveBanner(); this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); }); }
   setPage(p) { this.page = p; this.saveBanner(); this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); }); }
   setInspoFilter(v) { this.inspoFilter = v; this.saveInspoData(); this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); }); }
-  saveInspoData() { this.saveData({ theme: this.theme, areaH: this.areaH, page: this.page, projView: this.projView, projStage: this.projStage, banner: this.banner, pomo: this.pomo, inspirations: this.inspirations, inspoFilter: this.inspoFilter, glow: this.glow, countdownTarget: this.countdownTarget, countdownLabel: this.countdownLabel, inspoDir: this.inspoDir, dailyDir: this.dailyDir, weeklyDir: this.weeklyDir, projDir: this.projDir, wbTitle: this.wbTitle, wbEyebrow: this.wbEyebrow, projStages: this.projStages, inspoStages: this.inspoStages }); }
+  saveInspoData() { this.saveData({ theme: this.theme, areaH: this.areaH, page: this.page, projView: this.projView, projStage: this.projStage, wallView: this.wallView, banner: this.banner, pomo: this.pomo, inspirations: this.inspirations, inspoFilter: this.inspoFilter, glow: this.glow, countdownTarget: this.countdownTarget, countdownLabel: this.countdownLabel, inspoDir: this.inspoDir, dailyDir: this.dailyDir, weeklyDir: this.weeklyDir, projDir: this.projDir, wbTitle: this.wbTitle, wbEyebrow: this.wbEyebrow, projStages: this.projStages, inspoStages: this.inspoStages }); }
   // 项目阶段（归一化，4-6 槽，默认 3 启用）
   getProjStages() { return lib.normStages(this.projStages, 6, lib.DEFAULT_PROJ_STAGES); }
   // 项目阶段——仅启用
@@ -1579,6 +1584,7 @@ class WorkbenchView extends ItemView {
     this.refresh().catch((er) => this.catchRender(er));
   }
   onClose() {
+    this._stopStarMap();
     this.app.vault.off("modify", this._bump);
     this.app.vault.off("create", this._bump);
     this.app.vault.off("delete", this._bump);
@@ -1643,6 +1649,7 @@ class WorkbenchView extends ItemView {
     return out;
   }
   render() {
+    this._stopStarMap();
     const r = this.root;
     r.empty();
     r.setAttribute("data-glow", this.plugin.glow || "high");
@@ -2934,7 +2941,16 @@ class WorkbenchView extends ItemView {
   }
   renderWall(sc) {
     const wall = sc;
-    wall.createDiv({ cls: "wb-ktitle", text: "笔记卡片墙" });
+    const head = wall.createDiv({ cls: "wb-ktitle" });
+    head.createSpan({ text: "笔记卡片墙" });
+    const vt = head.createSpan({ cls: "wb-subtabs", attr: { style: "margin-left:auto;" } });
+    const vitems = [ { id: "wall", label: "卡片墙" }, { id: "star", label: "星座图" } ];
+    const curv = this.plugin.wallView || "wall";
+    for (const it of vitems) {
+      const b = vt.createSpan({ text: it.label, cls: "wb-subtab" + (curv === it.id ? " on" : "") });
+      b.addEventListener("click", () => this.plugin.setWallView(it.id));
+    }
+    if (curv === "star") { this.renderStarMap(wall); return; }
     const groups = lib.cardWall(this.state);
     for (const g of groups) {
       const sec = wall.createDiv({ cls: "wb-wgroup" });
@@ -2952,6 +2968,421 @@ class WorkbenchView extends ItemView {
     }
     if (!groups.length) wall.createDiv({ cls: "wb-empty", text: "（无命中白名单的文件夹）" });
   }
+  // 星座图视图：真3D星系——拖拽旋转(惯性+空闲自转)、滚轮缩放、透视投影、星云背景、衍射星芒、环境星场
+  // 三主题适配：A=深邃蓝太空 / B=美拉德暖纸 / C=多巴胺明亮
+  renderStarMap(wall) {
+    this._stopStarMap();
+    const allNotesRaw = (this.state && this.state.notes) || [];
+    if (!allNotesRaw.length) { wall.createDiv({ cls: "wb-empty", text: "（无笔记可展示）" }); return; }
+    const wrap = wall.createDiv({ cls: "wb-starmap" });
+    const canvas = wrap.createEl("canvas");
+    const dpr = window.devicePixelRatio || 1;
+    const theme = (this.plugin.theme || "a");
+    // 三套调色板：星团色 / 背景渐变(中心→边缘) / 环境星色 / 文本色 / 暗角色 / 提示框色
+    const PAL = theme === "b" ? {
+      // 美拉德：暖纸径向渐变底(中心暖亮→边缘柔深) + 焦糖/琥珀/肉桂/榛果/可可星点
+      star: ["#b06a3a", "#c8954e", "#8b5a2b", "#d4a96a", "#9c6644", "#bf7e4b", "#a0734a", "#7d5536"],
+      bgIn: "#ffffff", bgMid: "#fcf8f2", bgOut: "#f3ece1",
+      ambient: "#c4a878", text: "#4a3520", dot: "#b06a3a",
+      vignette: "rgba(160,130,80,.10)", tipBg: "rgba(255,250,240,.96)", tipSub: "#9c6644",
+      glowColor: "rgba(220,170,110,.18)",
+    } : theme === "c" ? {
+      // 多巴胺：柔彩径向渐变底(中心亮白→边缘薰衣草) + 高饱和粉/青/黄/紫/橙/绿/蓝/品红星点
+      star: ["#ff5c8a", "#2dd4bf", "#fbbf24", "#a78bfa", "#fb7185", "#34d399", "#60a5fa", "#f472b6"],
+      bgIn: "#ffffff", bgMid: "#fdfcff", bgOut: "#f5f2fc",
+      ambient: "#b8a8d4", text: "#2e2440", dot: "#a78bfa",
+      vignette: "rgba(160,140,200,.10)", tipBg: "rgba(255,255,255,.96)", tipSub: "#7c5cbf",
+      glowColor: "rgba(180,150,255,.16)",
+    } : {
+      // 深邃蓝太空（默认）
+      star: ["#7aa2f7", "#e0af68", "#9ece6a", "#bb9af7", "#f7768e", "#7dcfff", "#ff9e64", "#73daca"],
+      bgIn: "#0c1530", bgMid: "#070d1e", bgOut: "#03060f",
+      ambient: "#cdd6f4", text: "#e8ecf4", dot: "#7aa2f7",
+      vignette: "rgba(0,0,0,.5)", tipBg: "rgba(8,14,26,.95)", tipSub: "#7aa2f7",
+      glowColor: "rgba(122,162,247,.12)",
+    };
+    const COLORS = PAL.star;
+    const now = Date.now();
+    const THIRTY = 1000 * 60 * 60 * 24 * 30;
+    const hash = (str, salt) => { let h = 5381; const s = str + salt; for (let i = 0; i < s.length; i++) h = ((h << 5) + h) + s.charCodeAt(i); return (h >>> 0) / 0xFFFFFFFF; };
+    const aHex = (a) => Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, "0");
+    // 预渲染星点精灵（辉光 + 衍射星芒），避免每帧 createRadialGradient
+    function makeSprite(color, spikes) {
+      const sz = 64, mid = sz / 2;
+      const c = document.createElement("canvas");
+      c.width = c.height = sz;
+      const x = c.getContext("2d");
+      const g = x.createRadialGradient(mid, mid, 0, mid, mid, mid);
+      g.addColorStop(0, "rgba(255,255,255,1)");
+      g.addColorStop(0.08, color);
+      g.addColorStop(0.22, color + "66");
+      g.addColorStop(0.5, color + "1a");
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      x.fillStyle = g;
+      x.fillRect(0, 0, sz, sz);
+      if (spikes) {
+        for (const ang of [0, Math.PI / 2]) {
+          x.save(); x.translate(mid, mid); x.rotate(ang);
+          const sg = x.createLinearGradient(-mid, 0, mid, 0);
+          sg.addColorStop(0, "rgba(0,0,0,0)");
+          sg.addColorStop(0.3, color + "00");
+          sg.addColorStop(0.5, color + "cc");
+          sg.addColorStop(0.7, color + "00");
+          sg.addColorStop(1, "rgba(0,0,0,0)");
+          x.fillStyle = sg;
+          x.fillRect(-mid, -0.7, sz, 1.4);
+          x.restore();
+        }
+      }
+      return c;
+    }
+    const sprites = COLORS.map((c) => makeSprite(c, false));
+    const spikeSprites = COLORS.map((c) => makeSprite(c, true));
+    // 按 .md 实际目录层级分团（不用白名单），团中心斐波那契球面分布
+    const dirSet = new Map();
+    for (const n of allNotesRaw) {
+      const parts = n.path.split("/");
+      const dir = parts.length > 1 ? parts.slice(0, -1).join("/") : "（根目录）";
+      if (!dirSet.has(dir)) dirSet.set(dir, []);
+      dirSet.get(dir).push(n);
+    }
+    const dirs = Array.from(dirSet.entries()).filter(([, ns]) => ns.length > 0);
+    const nc = dirs.length;
+    const clusters = dirs.map(([dir, notes], ci) => {
+      const coli = ci % COLORS.length;
+      const color = COLORS[coli];
+      const stars = notes.map((n) => {
+        const ang = hash(n.path, "a") * Math.PI * 2;
+        const rr = Math.sqrt(hash(n.path, "r")) * 55;
+        const dz = (hash(n.path, "z") - 0.5) * 90;
+        const recency = Math.max(0, Math.min(1, 1 - (now - n.mtime) / THIRTY));
+        return { x: 0, y: 0, z: 0, recency, color, coli, note: n, phase: hash(n.path, "p") * Math.PI * 2, _ox: Math.cos(ang) * rr, _oy: Math.sin(ang) * rr, _oz: dz };
+      });
+      const phi = Math.acos(1 - 2 * (ci + 0.5) / nc);
+      const theta = Math.PI * (1 + Math.sqrt(5)) * (ci + 0.5);
+      const R = 200;
+      const cx = R * Math.sin(phi) * Math.cos(theta);
+      const cy = R * Math.sin(phi) * Math.sin(theta);
+      const cz = R * Math.cos(phi);
+      for (const s of stars) { s.x = cx + s._ox; s.y = cy + s._oy; s.z = cz + s._oz; }
+      return { folder: dir, color, coli, cx, cy, cz, stars, links: [] };
+    });
+    const allStars = clusters.flatMap((c) => c.stars);
+    // 关联连线：用 Obsidian metadataCache.resolvedLinks（关系图谱同源数据），
+    // 比手写正则强——涵盖 [[link]]/![[embed]]/frontmatter wikilink，且已按文件名解析。
+    const starByNote = new Map();
+    for (const s of allStars) starByNote.set(s.note.path, s);
+    const edges = [];
+    const seen = new Set();
+    try {
+      const mc = this.app.metadataCache;
+      const rl = mc && mc.resolvedLinks;
+      if (rl) {
+        // resolvedLinks 可能是 Map 或普通对象，统一用 Object.keys 遍历（兼容两种形态）
+        for (const fromPath of Object.keys(rl)) {
+          const from = starByNote.get(fromPath);
+          if (!from) continue;
+          const toMap = rl[fromPath];
+          for (const toPath of Object.keys(toMap || {})) {
+            const to = starByNote.get(toPath);
+            if (!to || to === from) continue;
+            const key = from.note.path < to.note.path ? from.note.path + "|" + to.note.path : to.note.path + "|" + from.note.path;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            edges.push({ from, to });
+          }
+        }
+      }
+    } catch (e) { /* metadataCache 不可用时静默降级为无线 */ }
+    // 连通分量：把互为链接的笔记聚成一个「社区」（连通分量 = 关系图谱里的一个团块）
+    const parent = new Map();
+    const find = (x) => { let r = x; while (parent.get(r) !== r) r = parent.get(r); while (parent.get(x) !== r) { const nx = parent.get(x); parent.set(x, r); x = nx; } return r; };
+    for (const s of allStars) parent.set(s, s);
+    for (const e of edges) { const a = find(e.from), b = find(e.to); if (a !== b) parent.set(a, b); }
+    const communities = new Map();
+    for (const s of allStars) { const r = find(s); if (!communities.has(r)) communities.set(r, []); communities.get(r).push(s); }
+    // 社区中心点：斐波那契球面分布，大社区（关联多）占更外圈、更显眼
+    const comArr = Array.from(communities.entries()); // [root, list]
+    const comMap = new Map();
+    for (const [root, list] of comArr) comMap.set(root, list); // 用 root 作 key，与 find(s) 一致
+    comArr.sort((a, b) => b[1].length - a[1].length); // 大社区排前
+    comArr.forEach(([root, list], ci) => {
+      const n = comArr.length;
+      const phi = Math.acos(1 - 2 * (ci + 0.5) / n);
+      const theta = Math.PI * (1 + Math.sqrt(5)) * (ci + 0.5);
+      const R = 150 + Math.min(120, ci * 22);
+      root.cx = R * Math.sin(phi) * Math.cos(theta);
+      root.cy = R * Math.sin(phi) * Math.sin(theta);
+      root.cz = R * Math.cos(phi);
+    });
+    // 每颗星绑定自己的社区中心；初始位置 = 社区中心 + 组内散布偏移
+    for (const s of allStars) {
+      const c0 = find(s); // root 上存着社区中心 cx/cy/cz
+      s.x = c0.cx + s._ox; s.y = c0.cy + s._oy; s.z = c0.cz + s._oz;
+    }
+    // 力导向微调：把互为链接的笔记往彼此拉（最多 40 步，无动画，仅算一次布局）
+    for (let it = 0; it < 40; it++) {
+      const F = new Map();
+      for (const s of allStars) if (!F.has(s)) F.set(s, [0, 0, 0]);
+      const step = 0.10 * (1 - it / 40);
+      for (const e of edges) {
+        const fx = e.to.x - e.from.x, fy = e.to.y - e.from.y, fz = e.to.z - e.from.z;
+        const dist = Math.sqrt(fx * fx + fy * fy + fz * fz) || 1;
+        const pull = Math.min(0.5, dist / 60) * step;
+        const ax = fx / dist * pull, ay = fy / dist * pull, az = fz / dist * pull;
+        const fa = F.get(e.from), fb = F.get(e.to);
+        fa[0] += ax; fa[1] += ay; fa[2] += az;
+        fb[0] -= ax; fb[1] -= ay; fb[2] -= az;
+      }
+      // 弹簧回复力：别被拉离社区中心太远（保持团块结构）
+      for (const s of allStars) {
+        const c0 = find(s); // root 上存着社区中心 cx/cy/cz
+        const fx = (c0.cx + s._ox) - s.x, fy = (c0.cy + s._oy) - s.y, fz = (c0.cz + s._oz) - s.z;
+        const f = F.get(s);
+        f[0] += fx * 0.02; f[1] += fy * 0.02; f[2] += fz * 0.02;
+      }
+      for (const s of allStars) {
+        const f = F.get(s);
+        const m = Math.sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+        if (m > 0.001) { const cap = Math.min(1, m); s.x += f[0] / m * cap; s.y += f[1] / m * cap; s.z += f[2] / m * cap; }
+      }
+    }
+    // 环境背景星场（远处装饰星，不交互，仅营造深空感）
+    const ambient = [];
+    const ambCount = theme === "a" ? 350 : 160;
+    for (let i = 0; i < ambCount; i++) {
+      const phi = Math.acos(1 - 2 * hash("amb" + i, "phi"));
+      const theta = hash("amb" + i, "th") * Math.PI * 2;
+      const R = 400 + hash("amb" + i, "r") * 300;
+      ambient.push({
+        x: R * Math.sin(phi) * Math.cos(theta), y: R * Math.sin(phi) * Math.sin(theta), z: R * Math.cos(phi),
+        size: 0.4 + hash("amb" + i, "s") * 1.1, bright: 0.12 + hash("amb" + i, "b") * 0.5, phase: hash("amb" + i, "p") * Math.PI * 2
+      });
+    }
+    let canvasW = 0, canvasH = 0;
+    const ctx = canvas.getContext("2d");
+    function resize() {
+      const rect = wrap.getBoundingClientRect();
+      canvasW = Math.max(300, rect.width);
+      canvasH = Math.max(380, rect.height || 560);
+      canvas.style.width = canvasW + "px";
+      canvas.style.height = canvasH + "px";
+      canvas.width = Math.round(canvasW * dpr);
+      canvas.height = Math.round(canvasH * dpr);
+    }
+    resize();
+    // 旋转/缩放状态
+    let yaw = 0.4, pitch = -0.2, vyaw = 0, vpitch = 0, zoom = 1.0, t = 0;
+    let dragging = false, dragMoved = false, lastX = 0, lastY = 0;
+    let hover = null, idle = 0;
+    const FOV = 520;
+    function project(x, y, z) {
+      const cy_ = Math.cos(yaw), sy_ = Math.sin(yaw);
+      const x1 = x * cy_ - z * sy_;
+      const z1 = x * sy_ + z * cy_;
+      const cp = Math.cos(pitch), sp = Math.sin(pitch);
+      const y2 = y * cp - z1 * sp;
+      const z2 = y * sp + z1 * cp;
+      const denom = FOV + z2;
+      if (denom <= 2) return null;
+      const persp = FOV / denom;
+      return { sx: canvasW * 0.5 + x1 * persp * zoom, sy: canvasH * 0.5 + y2 * persp * zoom, depth: z2, scale: persp * zoom };
+    }
+    function roundRect(c, x, y, w, h, r) {
+      if (c.roundRect) { c.beginPath(); c.roundRect(x, y, w, h, r); return; }
+      c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r);
+      c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+    }
+    function draw() {
+      ctx.save();
+      ctx.scale(dpr, dpr);
+      const cxh = canvasW * 0.5, cyh = canvasH * 0.5;
+      // 背景：三主题统一中心扩散径向渐变（中心亮→边缘柔深），A 偏暗、B/C 偏亮
+      const bg = ctx.createRadialGradient(cxh, cyh, 0, cxh, cyh, Math.max(canvasW, canvasH) * 0.75);
+      bg.addColorStop(0, PAL.bgIn);
+      bg.addColorStop(0.45, PAL.bgMid);
+      bg.addColorStop(1, PAL.bgOut);
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, canvasW, canvasH);
+      // 星系中心柔光（只在中心，不蔓延到角落）
+      const cg = ctx.createRadialGradient(cxh, cyh, 0, cxh, cyh, Math.min(canvasW, canvasH) * 0.4);
+      cg.addColorStop(0, PAL.glowColor);
+      cg.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = cg;
+      ctx.fillRect(0, 0, canvasW, canvasH);
+      // 环境背景星（闪烁，随星系旋转）
+      for (const a of ambient) {
+        const p = project(a.x, a.y, a.z);
+        if (!p) continue;
+        const fog = Math.max(0, Math.min(1, 1 - p.depth / 750));
+        if (fog < 0.02) continue;
+        const twk = 0.55 + 0.45 * Math.sin(t * 2.5 + a.phase);
+        ctx.globalAlpha = a.bright * fog * twk;
+        ctx.fillStyle = PAL.ambient;
+        ctx.fillRect(p.sx - a.size * 0.5, p.sy - a.size * 0.5, a.size, a.size);
+      }
+      ctx.globalAlpha = 1;
+      // 投影笔记星
+      const proj = new Map();
+      for (const s of allStars) proj.set(s, project(s.x, s.y, s.z));
+      // wikilink 关联连线（社区内部 + 跨社区；线条随深度淡出，连得近的更清晰）
+      ctx.lineWidth = 1.0;
+      for (const lk of edges) {
+        const pa = proj.get(lk.from), pb = proj.get(lk.to);
+        if (!pa || !pb) continue;
+        const a = Math.max(0.05, 0.4 - (pa.depth + pb.depth) / 1500);
+        ctx.strokeStyle = lk.from.color + aHex(a);
+        ctx.beginPath(); ctx.moveTo(pa.sx, pa.sy); ctx.lineTo(pb.sx, pb.sy); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      // 笔记星（远→近排序，用预渲染精灵）
+      const drawn = [];
+      for (const s of allStars) { const p = proj.get(s); if (p) drawn.push({ s, p }); }
+      drawn.sort((a, b) => b.p.depth - a.p.depth);
+      for (const { s, p } of drawn) {
+        const fog = Math.max(0.12, Math.min(1, 1 - p.depth / 480));
+        const twk = 0.82 + 0.18 * Math.sin(t * 2 + s.phase);
+        const opacity = fog * (0.35 + 0.65 * s.recency) * twk;
+        const baseR = Math.max(1.5, (1.8 + s.recency * 5) * p.scale);
+        const useSpike = p.scale > 0.55 && s.recency > 0.2;
+        ctx.globalAlpha = opacity;
+        ctx.drawImage(useSpike ? spikeSprites[s.coli] : sprites[s.coli], p.sx - baseR, p.sy - baseR, baseR * 2, baseR * 2);
+        if (p.scale > 0.5) {
+          ctx.globalAlpha = Math.min(1, opacity * 1.2);
+          ctx.fillStyle = "#ffffff";
+          ctx.beginPath(); ctx.arc(p.sx, p.sy, Math.max(0.5, baseR * 0.16), 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      ctx.globalAlpha = 1;
+      // 每颗笔记星的文件名标签（缩小时自动淡出，避免拥挤；悬停的星始终显示）
+      ctx.font = "500 10px ui-sans-serif, system-ui, sans-serif";
+      ctx.textAlign = "left";
+      for (const { s, p } of drawn) {
+        const near = p.scale > 0.85 || s === hover;
+        const fog2 = Math.max(0, Math.min(1, 1 - p.depth / 420));
+        if (!near && fog2 < 0.55) continue;
+        const label = s.note.name + (s.note.excalidraw ? " 🎨" : "");
+        ctx.globalAlpha = Math.min(1, 0.35 + fog2 * 0.6) * (s === hover ? 1 : 0.85);
+        ctx.fillStyle = PAL.text;
+        ctx.fillText(label, p.sx + 10 * p.scale + 4, p.sy + 3);
+      }
+      ctx.globalAlpha = 1;
+      // 悬浮提示
+      if (hover) {
+        const p = proj.get(hover);
+        if (p) {
+          const label = hover.note.name + (hover.note.excalidraw ? " 🎨" : "");
+          const sub = relTime(hover.note.mtime);
+          ctx.font = "600 13px ui-sans-serif, system-ui, sans-serif";
+          ctx.textAlign = "left";
+          const w = Math.max(ctx.measureText(label).width, ctx.measureText(sub).width) + 18;
+          let tx = p.sx + 14, ty = p.sy - 38;
+          if (tx + w > canvasW - 4) tx = p.sx - w - 14;
+          if (ty < 4) ty = p.sy + 14;
+          ctx.fillStyle = PAL.tipBg;
+          ctx.strokeStyle = hover.color + "88";
+          ctx.lineWidth = 1;
+          roundRect(ctx, tx, ty, w, 38, 7);
+          ctx.fill(); ctx.stroke();
+          ctx.fillStyle = PAL.text;
+          ctx.fillText(label, tx + 9, ty + 16);
+          ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
+          ctx.fillStyle = PAL.tipSub;
+          ctx.fillText(sub, tx + 9, ty + 31);
+        }
+      }
+      // 暗角
+      const vg = ctx.createRadialGradient(cxh, cyh, Math.min(canvasW, canvasH) * 0.35, cxh, cyh, Math.max(canvasW, canvasH) * 0.75);
+      vg.addColorStop(0, "rgba(0,0,0,0)");
+      vg.addColorStop(1, PAL.vignette);
+      ctx.fillStyle = vg;
+      ctx.fillRect(0, 0, canvasW, canvasH);
+      // 操作提示
+      ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillStyle = theme === "a" ? "rgba(255,255,255,.22)" : "rgba(60,60,80,.35)";
+      ctx.fillText("拖拽旋转 · 滚轮缩放 · 点击星辰打开笔记", 12, canvasH - 12);
+      ctx.restore();
+    }
+    function hitTest(cx, cy) {
+      let best = null, bestD = 20;
+      for (const s of allStars) {
+        const p = project(s.x, s.y, s.z);
+        if (!p) continue;
+        const d = Math.hypot(p.sx - cx, p.sy - cy);
+        const thr = Math.max(8, (1.8 + s.recency * 4) * p.scale);
+        if (d < thr && d < bestD) { bestD = d; best = s; }
+      }
+      return best;
+    }
+    const onDown = (e) => { dragging = true; dragMoved = false; lastX = e.clientX; lastY = e.clientY; vyaw = 0; vpitch = 0; canvas.style.cursor = "grabbing"; };
+    const onMove = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+      if (dragging) {
+        const dx = e.clientX - lastX, dy = e.clientY - lastY;
+        if (Math.abs(dx) + Math.abs(dy) > 3) dragMoved = true;
+        yaw += dx * 0.006; pitch += dy * 0.006;
+        pitch = Math.max(-1.4, Math.min(1.4, pitch));
+        vyaw = dx * 0.006; vpitch = dy * 0.006;
+        lastX = e.clientX; lastY = e.clientY; idle = 0;
+      } else {
+        hover = hitTest(cx, cy);
+        canvas.style.cursor = hover ? "pointer" : "grab";
+      }
+    };
+    const onUp = (e) => {
+      if (dragging && !dragMoved) {
+        const rect = canvas.getBoundingClientRect();
+        const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+        if (hit) this.openNote(hit.note.path);
+      }
+      dragging = false;
+      canvas.style.cursor = hover ? "pointer" : "grab";
+    };
+    const onLeave = () => { if (!dragging) { hover = null; canvas.style.cursor = "grab"; } };
+    const onWheel = (e) => { e.preventDefault(); zoom *= e.deltaY > 0 ? 0.92 : 1.08; zoom = Math.max(0.3, Math.min(3.5, zoom)); };
+    canvas.style.cursor = "grab";
+    canvas.addEventListener("mousedown", onDown);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    canvas.addEventListener("mouseleave", onLeave);
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    let running = true, rafId = 0;
+    const loop = () => {
+      if (!running) return;
+      t += 0.01;
+      if (!dragging) {
+        yaw += vyaw; pitch += vpitch;
+        vyaw *= 0.94; vpitch *= 0.94;
+        pitch = Math.max(-1.4, Math.min(1.4, pitch));
+        idle += 1;
+        if (idle > 90 && Math.abs(vyaw) < 0.0005 && Math.abs(vpitch) < 0.0005) yaw += 0.0015;
+      }
+      draw();
+      rafId = requestAnimationFrame(loop);
+    };
+    rafId = requestAnimationFrame(loop);
+    const ro = new ResizeObserver(() => resize());
+    ro.observe(wrap);
+    const onVis = () => {
+      if (document.hidden) { running = false; if (rafId) { cancelAnimationFrame(rafId); rafId = 0; } }
+      else if (!running) { running = true; rafId = requestAnimationFrame(loop); }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    this._starCleanup = () => {
+      running = false;
+      if (rafId) cancelAnimationFrame(rafId);
+      ro.disconnect();
+      canvas.removeEventListener("mousedown", onDown);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      canvas.removeEventListener("mouseleave", onLeave);
+      canvas.removeEventListener("wheel", onWheel);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }
+  _stopStarMap() { if (this._starCleanup) { try { this._starCleanup(); } catch (e) {} this._starCleanup = null; } }
   bindColumnDnD(col, c, kind) {
     col.addEventListener("dragover", (e) => { e.preventDefault(); col.classList.add("over"); });
     col.addEventListener("dragleave", () => col.classList.remove("over"));
