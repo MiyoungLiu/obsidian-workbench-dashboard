@@ -2793,7 +2793,7 @@ class WorkbenchView extends ItemView {
       const psets = CD_PAL[th] || CD_PAL.a;
       items.forEach((it, idx) => {
         const st = lib.countdownStats(it.date);
-        const today = st.daysLeft === 0;
+        const today = it.date === lib.todayStr(); // daysLeft 被 clamp 为 0，过去日期会误判成今天
         const isPast = it.date < lib.todayStr();
         // 迷你条：窗口 = 今年1/1 → 目标日；彩色 = 今年已流逝，灰底 = 距目标剩余
         let pct;
