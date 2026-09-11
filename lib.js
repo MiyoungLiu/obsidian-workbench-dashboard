@@ -597,6 +597,38 @@ export function taskYearHeatmap(state, year) {
   }
   return cells;
 }
+export function weekTrend(state, weeks) {
+  // 最近 N 周（含本周）每周完成的任务数，返回 [{week, label, done}]
+  if (!weeks) weeks = 8;
+  const doneCount = {};
+  for (const t of state.tasks) {
+    if (!t.done || !t.doneDate) continue;
+    const start = weekStart(t.doneDate);
+    doneCount[start] = (doneCount[start] || 0) + 1;
+  }
+  const endStart = weekStart(todayStr());
+  const out = [];
+  for (let i = weeks - 1; i >= 0; i--) {
+    const start = addDays(endStart, -i * 7);
+    const dt = new Date(Number(start.slice(0, 4)), Number(start.slice(5, 7)) - 1, Number(start.slice(8, 10)));
+    const lab = i === 0 ? "本周" : (dt.getMonth() + 1) + "/" + dt.getDate();
+    out.push({ week: start, label: lab, done: doneCount[start] || 0 });
+  }
+  return out;
+}
+export function streak(state) {
+  // 连续完成天数（今天未完成不中断，从昨天往前数）
+  const d = new Date();
+  let span = 0;
+  for (let i = 0; i < 2000; i++) {
+    const key = dateStr(new Date(d.getFullYear(), d.getMonth(), d.getDate() - i));
+    const has = state.tasks.some((t) => t.done && t.doneDate === key);
+    if (has) { span += 1; continue; }
+    if (i === 0) continue;
+    break;
+  }
+  return span;
+}
 // 倒计时：距目标日期的天数/剩余周数 + 当前年份已过去百分比（v2-T11 修复：原来按目标年算，跨年恒 0%）
 export function countdownStats(target, today) {
   if (!today) today = todayStr();

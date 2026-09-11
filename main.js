@@ -409,6 +409,34 @@ function setDue(text, ref, date) {
   lines[i] = line;
   return { ok: true, text: rejoin(text, lines), changed: line !== ref };
 }
+function setTaskText(text, ref, desc, tags, due) {
+  const lines = text.split(/\r?\n/);
+  const i = findIdx(text, ref);
+  if (i < 0) return { ok: false, error: "stale" };
+  const m3 = lines[i].match(/^(\s*[-*]\s+\[[ xX]\]\s+)(.*)$/);
+  if (!m3) return { ok: false, error: "not-task" };
+  let rest = m3[2]
+    .replace(/\s*#[^\s#]+/g, "")
+    .replace(/([📅✅⏳])\s*\d{4}-\d{2}-\d{2}/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const tagsArr = Array.isArray(tags) ? tags : [];
+  if (rest) {
+    let newLine = "- " + (lines[i].match(/^\s*[-*]\s+\[[xX]\]/) ? "[x]" : "[ ]") + " " + desc;
+    if (tagsArr.length) newLine += " " + tagsArr.map((x) => "#" + x).join(" ");
+    if ((lines[i].match(/✅\s*\d{4}-\d{2}-\d{2}/) || [])[0]) newLine += " " + lines[i].match(/✅\s*\d{4}-\d{2}-\d{2}/)[0];
+    if (due) newLine += " 📅 " + due;
+    lines[i] = m3[1] + newLine;
+  }
+  return { ok: true, text: rejoin(text, lines), changed: lines[i] !== ref };
+}
+function removeTaskLine(text, ref) {
+  const lines = text.split(/\r?\n/);
+  const i = findIdx(text, ref);
+  if (i < 0) return { ok: false, error: "stale" };
+  lines.splice(i, 1);
+  return { ok: true, text: rejoin(text, lines), changed: true };
+}
 function moveCard(text, ref, toHeading) {
   const lines = text.split(/\r?\n/);
   const i = findIdx(text, ref);
@@ -555,6 +583,38 @@ function taskYearHeatmap(state, year) {
     cells.push({ date: d, count: inYear ? (count[d] || 0) : 0, dow: (new Date(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10))).getDay() + 6) % 7, pad: !inYear });
   }
   return cells;
+}
+function weekTrend(state, weeks) {
+  // 最近 N 周（含本周）每周完成的任务数，返回 [{week, label, done}]
+  if (!weeks) weeks = 8;
+  const doneCount = {};
+  for (const t of state.tasks) {
+    if (!t.done || !t.doneDate) continue;
+    const start = weekStart(t.doneDate);
+    doneCount[start] = (doneCount[start] || 0) + 1;
+  }
+  const endStart = weekStart(todayStr());
+  const out = [];
+  for (let i = weeks - 1; i >= 0; i--) {
+    const start = addDays(endStart, -i * 7);
+    const dt = new Date(Number(start.slice(0, 4)), Number(start.slice(5, 7)) - 1, Number(start.slice(8, 10)));
+    const lab = i === 0 ? "本周" : (dt.getMonth() + 1) + "/" + dt.getDate();
+    out.push({ week: start, label: lab, done: doneCount[start] || 0 });
+  }
+  return out;
+}
+function streak(state) {
+  // 连续完成天数（含今天：今天没完成也不断，从昨天往前数）
+  const d = new Date();
+  let span = 0;
+  for (let i = 0; i < 2000; i++) {
+    const key = dateStr(new Date(d.getFullYear(), d.getMonth(), d.getDate() - i));
+    const has = state.tasks.some((t) => t.done && t.doneDate === key);
+    if (has) { span += 1; continue; }
+    if (i === 0) continue; // 今天未完成不中断，查昨天
+    break;
+  }
+  return span;
 }
 function countdownStats(target, today) {
   if (!today) today = todayStr();
@@ -774,7 +834,7 @@ function launchProjectPayload(clean, inspId, today, stages) {
   }
   return { path: "项目文档/" + c + "项目看板.md", fm: fm, tpl: parts.join("\n") };
 }
-const lib = { pad2, dateStr, todayStr, addDays, lunarCN, parseTaskLine, parseTasksForFile, noteInfo, collectState, queryToday, queryNext7, queryTodayDone, queryUnscheduled, querySuperBoard, kanbanBoard, CARD_FOLDERS, cardWall, toggleDone, setStage, setDue, moveCard, clearStage, weekStart, queryOverdue, todayStats, weekStats, heatmap, appendTaskLine, stageOf, filterByStage, calendarRange, ganttRows, noteDateOf, noteYearHeatmap, taskYearHeatmap, countdownStats, isoYearWeek, projectMeta, INSPO_COLS, INSPO_COL_IDS, normalizeInspo, inspAdd, inspMove, inspStar, inspDelete, inspGroup, parseInspoTags, INSPO_COL_CN, inspColFromCn, inspName, inspIdFromName, INSPO_STAGES, inspFileContent, parseInspoFile, inspFilePath, projectTagsOf, AUTO_BOARD_COL, AUTO_BOARD_EXCLUDE, queryAutoTasks, queryAutoDoneTasks, autoBoard, queryTagBoard, discoverTagBoards, DEFAULT_PROJ_STAGES, DEFAULT_INSPO_STAGES, normStages, enabledStages, stageBoard, inspoStageNames, setStageAny, clearStageAny, inspSlug, launchProjectPayload };
+const lib = { pad2, dateStr, todayStr, addDays, lunarCN, parseTaskLine, parseTasksForFile, noteInfo, collectState, queryToday, queryNext7, queryTodayDone, queryUnscheduled, querySuperBoard, kanbanBoard, CARD_FOLDERS, cardWall, toggleDone, setStage, setDue, moveCard, setTaskText, removeTaskLine, clearStage, weekStart, queryOverdue, todayStats, weekStats, heatmap, appendTaskLine, stageOf, filterByStage, calendarRange, ganttRows, noteDateOf, noteYearHeatmap, taskYearHeatmap, countdownStats, weekTrend, streak, isoYearWeek, projectMeta, INSPO_COLS, INSPO_COL_IDS, normalizeInspo, inspAdd, inspMove, inspStar, inspDelete, inspGroup, parseInspoTags, INSPO_COL_CN, inspColFromCn, inspName, inspIdFromName, INSPO_STAGES, inspFileContent, parseInspoFile, inspFilePath, projectTagsOf, AUTO_BOARD_COL, AUTO_BOARD_EXCLUDE, queryAutoTasks, queryAutoDoneTasks, autoBoard, queryTagBoard, discoverTagBoards, DEFAULT_PROJ_STAGES, DEFAULT_INSPO_STAGES, normStages, enabledStages, stageBoard, inspoStageNames, setStageAny, clearStageAny, inspSlug, launchProjectPayload };
 const VIEW_TYPE = "workbench-dashboard";
 // 手动看板（物理栏；拖拽 = 跨 ## 移动整行任务）
 const MANUAL_BOARDS = [
@@ -867,6 +927,11 @@ const CSS = `
 .wb-due{ flex:none; font-size:11px; color:var(--muted); }
 .wb-due.add{ color:var(--accent); }
 .wb-due.sch{ color:var(--accent2); }
+.wb-due-edit{ cursor:pointer; color:var(--muted); opacity:.5; }
+.wb-row:hover .wb-due-edit{ opacity:1; }
+.wb-cdue-edit{ cursor:pointer; opacity:.5; }
+.wb-card:hover .wb-cdue-edit{ opacity:1; }
+.wb-cdue-edit:hover{ color:var(--accent); }
 .wb-board-title{ font-size:13px; font-weight:700; color:var(--muted); margin-bottom:6px; }
 .wb-ktitle{ font-size:12px; font-weight:700; color:var(--text); margin-bottom:10px; letter-spacing:.02em; }
 .wb-kanban{ max-height:440px; overflow-y:auto; }
@@ -927,7 +992,8 @@ const CSS = `
 .wb-home-card[data-mod="capture"]{ --c:2; --r:1; min-height:var(--wb-row-h,230px); }
 .wb-home-card[data-mod="taskheat"]{ --c:2; --r:1; min-height:180px; align-content:start; }
 .wb-home-card[data-mod="noteheat"]{ --c:2; --r:1; min-height:180px; align-content:start; }
-@media(max-width:1280px){ .wb-home-card[data-mod="pulse"]{ --c:3; } .wb-home-card[data-mod="countdown"],.wb-home-card[data-mod="pomo"]{ --c:1; } .wb-home-card[data-mod="capture"]{ --c:4; } .wb-home-card[data-mod="taskheat"],.wb-home-card[data-mod="noteheat"]{ --c:2; } }
+.wb-home-card[data-mod="weektrend"]{ --c:4; --r:1; min-height:180px; align-content:start; }
+@media(max-width:1280px){ .wb-home-card[data-mod="pulse"]{ --c:3; } .wb-home-card[data-mod="countdown"],.wb-home-card[data-mod="pomo"]{ --c:1; } .wb-home-card[data-mod="capture"]{ --c:4; } .wb-home-card[data-mod="taskheat"],.wb-home-card[data-mod="noteheat"]{ --c:2; } .wb-home-card[data-mod="weektrend"]{ --c:2; } }
 @media(max-width:900px){ .wb-home-card{ --c:2 !important; } .wb-home-card[data-mod="pulse"]{ --c:2; } .wb-home-card[data-mod="capture"]{ --c:2; } }
 @media(max-width:620px){ .wb-home-card{ --c:1 !important; --r:1 !important; } .wb-home-card{ min-height:150px; } }
 .wb-card-h{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
@@ -982,6 +1048,18 @@ const CSS = `
 .wb-heat .wb-hc.today{ box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 60%, transparent); }
 .wb-heat-legend{ display:flex; align-items:center; gap:3px; font-size:10px; color:var(--muted); }
 .wb-heat-legend .wb-hc{ width:11px; height:11px; }
+/* 近 8 周完成趋势卡 */
+.wb-wt{ display:flex; flex-direction:column; gap:10px; min-width:0; }
+.wb-wt-bars{ display:flex; align-items:flex-end; gap:8px; flex:1; min-height:110px; }
+.wb-wt-col{ flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; height:100%; min-width:0; }
+.wb-wt-v{ flex:1; width:100%; display:flex; align-items:flex-end; }
+.wb-wt-bar{ width:100%; border-radius:5px 5px 0 0; background:linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 55%, var(--bg))); min-height:3px; transition:filter .12s; }
+.wb-wt-bar.zero{ background:var(--panel2); }
+.wb-wt-col:hover .wb-wt-bar{ filter:brightness(1.15); }
+.wb-wt-n{ font-size:11px; font-weight:700; color:var(--text); font-variant-numeric:tabular-nums; }
+.wb-wt-lb{ font-size:10px; color:var(--muted); white-space:nowrap; }
+.wb-wt-foot{ display:flex; align-items:center; justify-content:space-between; font-size:11px; color:var(--muted); }
+.wb-wt-foot .wb-wt-streak{ color:var(--accent2); font-weight:600; }
 .wb-toolbar{ display:flex; gap:7px; margin-left:10px; }
 .wb-tb-btn{ cursor:pointer; display:flex; align-items:center; gap:6px; font-size:13px; font-weight:600; padding:7px 14px; border-radius:9px; border:1px solid var(--border); color:var(--muted); user-select:none; background:var(--panel2); transition:all .12s; }
 .wb-tb-btn:hover{ color:var(--accent); border-color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, var(--panel2)); transform:translateY(-1px); }
@@ -1033,7 +1111,11 @@ const CSS = `
 .wb-stg-done{ background:color-mix(in srgb, var(--good) 20%, var(--chipbg)); color:var(--good); }
 .wb-pl-s{ font-size:11px; padding:2px 8px; border-radius:6px; text-align:center; }
 .wb-pcal{ border:1px solid var(--border); border-radius:12px; padding:12px; background:var(--panel); }
-.wb-pcal-t{ font-size:12px; color:var(--muted); margin-bottom:10px; }
+.wb-pcal-t{ font-size:12px; color:var(--muted); }
+.wb-pcal-head{ display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.wb-pcal-head .wb-pcal-t{ flex:1; text-align:center; }
+.wb-pcal-nav{ cursor:pointer; font-size:18px; line-height:1; color:var(--muted); padding:0 8px; border-radius:6px; user-select:none; transition:color .12s, background .12s; }
+.wb-pcal-nav:hover{ color:var(--accent); background:var(--panel2); }
 .wb-pcal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:6px; }
 .wb-pcal-month .wb-pcal-cell{ min-height:72px; flex-direction:column; align-items:stretch; }
 .wb-pcal-month .wb-pcal-num{ font-size:11px; color:var(--muted); font-weight:600; margin-bottom:3px; }
@@ -1152,7 +1234,9 @@ const CSS = `
 .wb-inspo-coltitle{ font-size:14px; font-weight:600; }
 .wb-inspo-colcount{ font-size:12px; color:var(--text2); background:var(--panel2); border-radius:99px; padding:1px 8px; font-variant-numeric:tabular-nums; }
 .wb-inspo-colbody{ flex:1; display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
-.wb-inspo-card{ background:var(--panel2); border:1px solid var(--hair); border-radius:10px; padding:10px 11px; }
+.wb-inspo-card{ background:var(--panel2); border:1px solid var(--hair); border-radius:10px; padding:10px 11px; transition:opacity .12s, border-color .12s, box-shadow .12s; }
+.wb-inspo-card.dragging{ opacity:.35; border-color:var(--accent); }
+.wb-inspo-colbody.dropover{ outline:1.5px dashed var(--accent); outline-offset:-3px; border-radius:8px; }
 .wb-inspo-ct{ font-size:13px; font-weight:600; color:var(--text); margin-bottom:5px; }
 .wb-inspo-tags{ display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px; }
 .wb-inspo-tag{ font-size:11px; color:var(--accent); background:color-mix(in srgb, var(--accent) 14%, transparent); border-radius:6px; padding:1px 6px; }
@@ -1187,7 +1271,9 @@ const CSS = `
 .wb-inspo-coltitle{ font-size:14px; font-weight:600; }
 .wb-inspo-colcount{ font-size:12px; color:var(--text2); background:var(--panel2); border-radius:99px; padding:1px 8px; font-variant-numeric:tabular-nums; }
 .wb-inspo-colbody{ flex:1; display:flex; flex-direction:column; gap:8px; }
-.wb-inspo-card{ background:var(--panel2); border:1px solid var(--hair); border-radius:10px; padding:10px 11px; }
+.wb-inspo-card{ background:var(--panel2); border:1px solid var(--hair); border-radius:10px; padding:10px 11px; transition:opacity .12s, border-color .12s; }
+.wb-inspo-card.dragging{ opacity:.35; border-color:var(--accent); }
+.wb-inspo-colbody.dropover{ outline:1.5px dashed var(--accent); outline-offset:-3px; border-radius:8px; }
 .wb-inspo-ch{ display:flex; align-items:flex-start; gap:6px; }
 .wb-inspo-ct{ flex:1; font-size:13px; font-weight:600; color:var(--text); margin-bottom:5px; cursor:pointer; }
 .wb-inspo-ct:hover{ color:var(--accent); }
@@ -1212,6 +1298,11 @@ const CSS = `
 .wb-inspo-lt{ flex:1; min-width:0; font-size:13px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .wb-inspo-lc{ font-size:12px; font-weight:600; }
 .wb-inspo-ltags{ font-size:11px; color:var(--text2); max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* 快速跳转 */
+.wb-qj-ic{ flex:none; }
+.wb-qj-t{ flex:1; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wb-qj-s{ font-size:11px; color:var(--text-muted); margin-left:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:220px; }
+.wb-qj-k{ flex:none; font-size:10px; color:var(--text-muted); border:1px solid var(--background-modifier-border); border-radius:5px; padding:0 5px; margin-left:8px; }
 `;
 // 主题色同步到插件自建弹窗（注入全局 <style>，幂等）
 const WB_MODAL_CSS = [
@@ -1263,7 +1354,7 @@ class WorkbenchPlugin extends Plugin {
   wallView = "wall";
   wbTitle = "Lyra";
   wbEyebrow = "MIYOUNG · WORKBENCH";
-  banner = { a: { dataUrl: null, offsetY: 0, scale: 1 }, b: { dataUrl: null, offsetY: 0, scale: 1 }, c: { dataUrl: null, offsetY: 0, scale: 1 } };
+  banner = { a: { file: null, dataUrl: null, offsetY: 0, scale: 1 }, b: { file: null, dataUrl: null, offsetY: 0, scale: 1 }, c: { file: null, dataUrl: null, offsetY: 0, scale: 1 } };
   pomo = { work: 25, rest: 5, mode: "work", left: 25 * 60, running: false };
   inspirations = [];
   inspoFilter = "all";
@@ -1274,57 +1365,142 @@ class WorkbenchPlugin extends Plugin {
   projStages = null;
   inspoStages = null;
   async onload() {
-    const data = await this.loadData();
-    if (data && data.theme) this.theme = data.theme;
-    if (data && data.areaH) this.areaH = data.areaH;
-    if (data && data.page) this.page = data.page;
-    if (data && data.projView) this.projView = data.projView;
-    if (data && data.projStage) this.projStage = data.projStage;
-    if (data && data.wallView) this.wallView = data.wallView;
-    if (data && data.banner) {
-      // 安全迁移:清理混合脏数据(顶层 dataUrl/offsetY 字段),View 的 _bannerOf 再做完整规范化
-      const b = data.banner;
-      if (b && typeof b === "object" && "dataUrl" in b) {
-        this.banner = { a: (b.a && typeof b.a === "object") ? b.a : { dataUrl: b.dataUrl || null, offsetY: b.offsetY || 0, scale: 1 }, b: b.b || { dataUrl: null, offsetY: 0, scale: 1 }, c: b.c || { dataUrl: null, offsetY: 0, scale: 1 } };
-      } else if (b && typeof b === "object" && b.a) {
-        this.banner = { a: b.a, b: b.b || { dataUrl: null, offsetY: 0, scale: 1 }, c: b.c || { dataUrl: null, offsetY: 0, scale: 1 } };
-      } else {
-        this.banner = b;
-      }
+    let data = null;
+    try {
+      data = await this.loadData();
+    } catch (e) {
+      console.error("[Lyra] data.json parse failed, trying backups", e);
+      try {
+        const pdir = this.app.vault.configDir + "/plugins/workbench-dashboard";
+        const adapter = this.app.vault.adapter;
+        for (const bk of ["data.backup1.json", "data.backup2.json"]) {
+          try { data = JSON.parse(await adapter.read(pdir + "/" + bk)); new Notice("Lyra：data.json 损坏，已从备份 " + bk + " 恢复"); break; } catch (e2) {}
+        }
+      } catch (e3) {}
+      if (!data) { data = {}; new Notice("Lyra：data.json 损坏且无备份可用，使用默认配置"); }
     }
-    if (data && data.pomo) this.pomo = Object.assign({}, this.pomo, data.pomo);
-    if (data && data.inspirations) this.inspirations = data.inspirations;
-    if (data && data.inspoFilter) this.inspoFilter = data.inspoFilter;
-    if (data && data.glow) this.glow = data.glow;
-    if (data && data.countdownTarget) this.countdownTarget = data.countdownTarget;
-    if (data && data.countdownLabel) this.countdownLabel = data.countdownLabel;
-    this.countdowns = (data && Array.isArray(data.countdowns)) ? data.countdowns.filter((x) => x && x.date && /^\d{4}-\d{2}-\d{2}$/.test(x.date)).map((x) => ({ label: String(x.label || "").trim(), date: x.date, since: (x.since && x.since.length === 10) ? x.since : undefined })) : [];
-    if (!this.countdowns.length && data && data.countdownTarget && /^\d{4}-\d{2}-\d{2}$/.test(data.countdownTarget)) {
-      this.countdowns = [{ label: String(data.countdownLabel || "").trim(), date: data.countdownTarget }];
-    }
-    this.inspoDir = (data && data.inspoDir) || "1-灵感";
-    this.dailyDir = (data && data.dailyDir) || "0-收件箱/每日";
-    this.weeklyDir = (data && data.weeklyDir) || "0-收件箱/每周";
-    this.projDir = (data && data.projDir) || "项目文档";
-    this.archiveDir = (data && data.archiveDir) || "笔记归档";
-    this.wbTitle = (data && data.wbTitle) || "Lyra";
-    this.wbEyebrow = (data && data.wbEyebrow != null) ? data.wbEyebrow : "MIYOUNG · WORKBENCH";
-    this.projStages = (data && data.projStages) || null;
-    this.inspoStages = (data && data.inspoStages) || null;
-    if (!this.inspoStages) {
-      this.inspoStages = lib.DEFAULT_INSPO_STAGES.map((s) => Object.assign({}, s, { enabled: !(s.name === "已完成" || s.name === "已放弃") }));
-    }
+    this.applyData(data);
     void this.migrateInspoFiles(data);
+    void this.migrateBanners();
     this.applyAppAppearance(this.theme);
     this.registerView(VIEW_TYPE, (leaf) => new WorkbenchView(leaf, this));
     this.addRibbonIcon("gauge", "打开工作台", () => this.openView());
     this.addCommand({ id: "open-workbench", name: "打开仪表盘", callback: () => this.openView() });
     this.addCommand({ id: "wb-new-project-board", name: "新建项目看板（模板）", callback: () => this.newProjectBoard() });
+    this.addCommand({ id: "wb-quick-jump", name: "快速跳转（任务/笔记/项目/灵感）", callback: () => this.quickJump() });
     this.settingTab = new WorkbenchSettingTab(this.app, this);
     this.addSettingTab(this.settingTab);
   }
   onunload() {
     this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.onClose(); });
+  }
+  applyData(data) {
+    if (!data) data = {};
+    if (data.theme) this.theme = data.theme;
+    if (data.areaH) this.areaH = data.areaH;
+    if (data.page) this.page = data.page;
+    if (data.projView) this.projView = data.projView;
+    if (data.projStage) this.projStage = data.projStage;
+    if (data.wallView) this.wallView = data.wallView;
+    if (data.banner) {
+      const b = data.banner;
+      if (b && typeof b === "object" && "dataUrl" in b) {
+        this.banner = { a: (b.a && typeof b.a === "object") ? b.a : { file: null, dataUrl: b.dataUrl || null, offsetY: b.offsetY || 0, scale: 1 }, b: b.b || { file: null, dataUrl: null, offsetY: 0, scale: 1 }, c: b.c || { file: null, dataUrl: null, offsetY: 0, scale: 1 } };
+      } else if (b && typeof b === "object" && b.a) {
+        this.banner = { a: b.a, b: b.b || { file: null, dataUrl: null, offsetY: 0, scale: 1 }, c: b.c || { file: null, dataUrl: null, offsetY: 0, scale: 1 } };
+      } else {
+        this.banner = b;
+      }
+    }
+    if (data.pomo) this.pomo = Object.assign({}, this.pomo, data.pomo);
+    if (data.inspirations) this.inspirations = data.inspirations;
+    if (data.inspoFilter) this.inspoFilter = data.inspoFilter;
+    if (data.glow) this.glow = data.glow;
+    if (data.countdownTarget) this.countdownTarget = data.countdownTarget;
+    if (data.countdownLabel) this.countdownLabel = data.countdownLabel;
+    this.countdowns = (Array.isArray(data.countdowns)) ? data.countdowns.filter((x) => x && x.date && /^\d{4}-\d{2}-\d{2}$/.test(x.date)).map((x) => ({ label: String(x.label || "").trim(), date: x.date, since: (x.since && x.since.length === 10) ? x.since : undefined })) : [];
+    if (!this.countdowns.length && data.countdownTarget && /^\d{4}-\d{2}-\d{2}$/.test(data.countdownTarget)) {
+      this.countdowns = [{ label: String(data.countdownLabel || "").trim(), date: data.countdownTarget }];
+    }
+    this.inspoDir = data.inspoDir || "1-灵感";
+    this.dailyDir = data.dailyDir || "0-收件箱/每日";
+    this.weeklyDir = data.weeklyDir || "0-收件箱/每周";
+    this.projDir = data.projDir || "项目文档";
+    this.archiveDir = data.archiveDir || "笔记归档";
+    this.wbTitle = data.wbTitle || "Lyra";
+    this.wbEyebrow = data.wbEyebrow != null ? data.wbEyebrow : "MIYOUNG · WORKBENCH";
+    this.projStages = data.projStages || null;
+    this.inspoStages = data.inspoStages || null;
+    if (!this.inspoStages) {
+      this.inspoStages = lib.DEFAULT_INSPO_STAGES.map((s) => Object.assign({}, s, { enabled: !(s.name === "已完成" || s.name === "已放弃") }));
+    }
+  }
+  async migrateBanners() {
+    let changed = false;
+    for (const theme of ["a", "b", "c"]) {
+      const slot = this.banner[theme];
+      if (!slot || !slot.dataUrl) continue;
+      try {
+        const compressed = await this.compressBanner(slot.dataUrl, 2560, 0.88);
+        const base64 = compressed.split(",")[1];
+        const buf = this.base64ToBuffer(base64);
+        const pdir = this.app.vault.configDir + "/plugins/workbench-dashboard";
+        const fileName = "banner-" + theme + ".jpg";
+        await this.app.vault.adapter.writeBinary(pdir + "/" + fileName, buf);
+        slot.file = fileName;
+        delete slot.dataUrl;
+        changed = true;
+      } catch (e) { console.error("[Lyra] banner migration failed for", theme, e); }
+    }
+    if (changed) { this.saveInspoData(); new Notice("封面已压缩外置，data.json 已瘦身"); }
+  }
+  compressBanner(dataUrl, maxW, quality) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = reject;
+      img.src = dataUrl;
+    });
+  }
+  base64ToBuffer(b64) {
+    const bin = atob(b64); const len = bin.length; const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes.buffer;
+  }
+  quickJump() {
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE);
+    const view = leaves.length && leaves[0].view;
+    if (view && view._quickJump) { view._quickJump(); return; }
+    new Notice("请先打开工作台视图");
+  }
+  async exportConfig() {
+    try {
+      const pdir = this.app.vault.configDir + "/plugins/workbench-dashboard";
+      const txt = await this.app.vault.adapter.read(pdir + "/data.json");
+      const name = "Lyra-配置备份-" + lib.dateStr(new Date()).replace(/-/g, "") + ".json";
+      const path = name;
+      if (this.app.vault.getAbstractFileByPath(path)) await this.app.vault.modify(this.app.vault.getAbstractFileByPath(path), txt);
+      else await this.app.vault.create(path, txt);
+      new Notice("配置已导出到仓库根目录：" + name);
+    } catch (e) { new Notice("导出失败：" + String((e && e.message) || e)); }
+  }
+  async importConfig(txt) {
+    try {
+      const data = JSON.parse(txt);
+      this.applyData(data);
+      await this.saveInspoData();
+      this.applyAppAppearance(this.theme);
+      this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); });
+      new Notice("配置已导入并应用");
+    } catch (e) { new Notice("导入失败：" + String((e && e.message) || e)); }
   }
   async migrateInspoFiles(data) {
     const legacy = (data && Array.isArray(data.inspirations)) ? data.inspirations : [];
@@ -1378,7 +1554,26 @@ class WorkbenchPlugin extends Plugin {
   setWallView(v) { this.wallView = v; this.saveBanner(); this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); }); }
   setPage(p) { this.page = p; this.saveBanner(); this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); }); }
   setInspoFilter(v) { this.inspoFilter = v; this.saveInspoData(); this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); }); }
-  saveInspoData() { const cd0 = (this.countdowns && this.countdowns[0]) || null; this.saveData({ theme: this.theme, areaH: this.areaH, page: this.page, projView: this.projView, projStage: this.projStage, wallView: this.wallView, banner: this.banner, pomo: this.pomo, inspirations: this.inspirations, inspoFilter: this.inspoFilter, glow: this.glow, countdownTarget: cd0 ? cd0.date : "", countdownLabel: cd0 ? cd0.label : "", countdowns: this.countdowns, inspoDir: this.inspoDir, dailyDir: this.dailyDir, weeklyDir: this.weeklyDir, projDir: this.projDir, archiveDir: this.archiveDir, wbTitle: this.wbTitle, wbEyebrow: this.wbEyebrow, projStages: this.projStages, inspoStages: this.inspoStages }); }
+  saveInspoData() {
+    const cd0 = (this.countdowns && this.countdowns[0]) || null;
+    const payload = { theme: this.theme, areaH: this.areaH, page: this.page, projView: this.projView, projStage: this.projStage, wallView: this.wallView, banner: this.banner, pomo: this.pomo, inspirations: this.inspirations, inspoFilter: this.inspoFilter, glow: this.glow, countdownTarget: cd0 ? cd0.date : "", countdownLabel: cd0 ? cd0.label : "", countdowns: this.countdowns, inspoDir: this.inspoDir, dailyDir: this.dailyDir, weeklyDir: this.weeklyDir, projDir: this.projDir, archiveDir: this.archiveDir, wbTitle: this.wbTitle, wbEyebrow: this.wbEyebrow, projStages: this.projStages, inspoStages: this.inspoStages };
+    const pdir = this.app.vault.configDir + "/plugins/workbench-dashboard";
+    const adapter = this.app.vault.adapter;
+    this._saveChain = (this._saveChain || Promise.resolve()).then(async () => {
+      const now = Date.now();
+      if (!this._lastBackup || now - this._lastBackup > 60000) {
+        try {
+        if (await adapter.exists(pdir + "/data.backup1.json")) {
+          try { await adapter.write(pdir + "/data.backup2.json", await adapter.read(pdir + "/data.backup1.json")); } catch (e) {}
+        }
+        try { await adapter.write(pdir + "/data.backup1.json", await adapter.read(pdir + "/data.json")); } catch (e) {}
+        this._lastBackup = now;
+      } catch (e) {}
+      }
+      await this.saveData(payload);
+    }).catch((e) => { console.error("[Lyra] saveInspoData error", e); });
+    return this._saveChain;
+  }
   // 项目阶段（归一化，4-6 槽，默认 3 启用）
   getProjStages() { return lib.normStages(this.projStages, 6, lib.DEFAULT_PROJ_STAGES); }
   // 项目阶段——仅启用
@@ -1623,10 +1818,14 @@ class WorkbenchView extends ItemView {
     this.app.vault.on("modify", this._bump);
     this.app.vault.on("create", this._bump);
     this.app.vault.on("delete", this._bump);
+    this._jb = (e) => { if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); this._quickJump(); } };
+    document.addEventListener("keydown", this._jb, true);
     this.refresh().catch((er) => this.catchRender(er));
   }
   onClose() {
     this._stopStarMap();
+    if (this._bannerURLs) { for (const k in this._bannerURLs) { try { URL.revokeObjectURL(this._bannerURLs[k]); } catch (e) {} } this._bannerURLs = null; }
+    if (this._jb) { document.removeEventListener("keydown", this._jb, true); this._jb = null; }
     this.app.vault.off("modify", this._bump);
     this.app.vault.off("create", this._bump);
     this.app.vault.off("delete", this._bump);
@@ -1670,10 +1869,10 @@ class WorkbenchView extends ItemView {
   }
   _normSlot(s) {
     const o = (s && typeof s === "object") ? s : {};
-    return { dataUrl: o.dataUrl || null, offsetY: o.offsetY || 0, scale: o.scale || 1 };
+    return { file: o.file || null, dataUrl: o.dataUrl || null, offsetY: o.offsetY || 0, scale: o.scale || 1 };
   }
   _emptyBanner() {
-    return { a: { dataUrl: null, offsetY: 0, scale: 1 }, b: { dataUrl: null, offsetY: 0, scale: 1 }, c: { dataUrl: null, offsetY: 0, scale: 1 } };
+    return { a: { file: null, dataUrl: null, offsetY: 0, scale: 1 }, b: { file: null, dataUrl: null, offsetY: 0, scale: 1 }, c: { file: null, dataUrl: null, offsetY: 0, scale: 1 } };
   }
   _bannerOf(t) {
     if (!this.plugin.banner || typeof this.plugin.banner !== "object") this.plugin.banner = this._emptyBanner();
@@ -1825,7 +2024,21 @@ class WorkbenchView extends ItemView {
     this.dismissBanner();
     this.state = lib.collectState(await this.gatherFiles());
     this.inspoItems = await this.loadInspoFiles();
+    this.cleanupAreaH();
     this.render();
+  }
+  cleanupAreaH() {
+    const areaH = this.plugin.areaH;
+    if (!areaH || typeof areaH !== "object") return;
+    let changed = false;
+    const files = this.app.vault.getAbstractFileByPath;
+    const validFiles = new Set(this.app.vault.getMarkdownFiles().map((f) => f.path));
+    for (const key of Object.keys(areaH)) {
+      if (key === "pulse" || key === "wall" || key === "lists" || key === "proj" || key === "pulseRow") continue;
+      if (key.indexOf("board:") === 0) { const p = key.slice("board:".length); if (!validFiles.has(p)) { delete areaH[key]; changed = true; } continue; }
+      if (key.indexOf("proj-") === 0) { const p = this.plugin.projDir + "/" + key.slice("proj-".length) + "项目看板.md"; if (!validFiles.has(p)) { delete areaH[key]; changed = true; } continue; }
+    }
+    if (changed) this.plugin.saveInspoData();
   }
   async loadInspoFiles() {
     const dir = (this.plugin.inspoDir || "1-灵感") + "/";
@@ -1896,6 +2109,18 @@ class WorkbenchView extends ItemView {
         if (col.dot) ct.style.color = col.dot;
         ch.createSpan({ text: String(items.length), cls: "wb-inspo-colcount" });
         const body = card.createDiv({ cls: "wb-inspo-colbody" });
+        const bindDrop = () => {
+          body.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; body.classList.add("dropover"); });
+          body.addEventListener("dragleave", () => body.classList.remove("dropover"));
+          body.addEventListener("drop", (e) => {
+            e.preventDefault();
+            body.classList.remove("dropover");
+            const id = e.dataTransfer.getData("text/plain");
+            if (!id) return;
+            this.inspoSave((list) => lib.inspMove(list, id, col.id));
+          });
+        };
+        bindDrop();
         for (const it of items) this.inspoCard(body, it, col.id);
         if (!items.length) body.createDiv({ text: "（空）", cls: "wb-inspo-empty" });
       }
@@ -1923,6 +2148,9 @@ class WorkbenchView extends ItemView {
   inspoCard(parent, it, col) {
     const c = parent.createDiv({ cls: "wb-inspo-card" });
     c.style.cursor = "pointer";
+    c.draggable = true;
+    c.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/plain", it.id); e.dataTransfer.effectAllowed = "move"; c.classList.add("dragging"); });
+    c.addEventListener("dragend", () => { parent.querySelectorAll(".wb-inspo-card.dragging").forEach((el) => el.removeClass("dragging")); parent.classList.remove("dropover"); });
     c.addEventListener("click", () => this.openNote(it.file));
     const head = c.createDiv({ cls: "wb-inspo-ch" });
     const star = head.createSpan({ text: it.starred ? "★" : "☆", cls: "wb-inspo-star" + (it.starred ? " on" : "") });
@@ -2046,43 +2274,66 @@ class WorkbenchView extends ItemView {
     const t = this.plugin.theme || "a";
     const b = this._bannerOf(t);
     const bar = this.pad.createDiv({ cls: "wb-banner" });
-    const img = bar.createEl("img", { cls: "wb-banner-img" + (b.dataUrl ? "" : " hide") });
-    if (b.dataUrl) {
-      img.src = b.dataUrl;
-      const sc = b.scale || 1;
-      img.style.transform = "translateY(" + (b.offsetY || 0) + "px) scale(" + sc + ")";
-      img.style.transformOrigin = "center top";
+    const img = bar.createEl("img", { cls: "wb-banner-img" + (b.file || b.dataUrl ? "" : " hide") });
+    const hasArt = !!b.file || !!b.dataUrl;
+    if (hasArt) {
+      if (b.file) {
+        const pdir = this.plugin.app.vault.configDir + "/plugins/workbench-dashboard";
+        this.plugin.app.vault.adapter.readBinary(pdir + "/" + b.file).then((buf) => {
+          if (!img.isConnected) return;
+          if (this._bannerURLs) URL.revokeObjectURL(this._bannerURLs[b.file]);
+          this._bannerURLs = this._bannerURLs || {};
+          this._bannerURLs[b.file] = URL.createObjectURL(new Blob([buf]));
+          img.src = this._bannerURLs[b.file];
+          this.applyBannerTransform(img, b);
+        }).catch(() => { this._bannerURLs = this._bannerURLs || {}; });
+      } else {
+        img.src = b.dataUrl;
+        this.applyBannerTransform(img, b);
+      }
     }
-    if (!b.dataUrl) bar.createDiv({ text: "[ 封面 ]  ·  悬停右上角按钮插入封面图片", cls: "wb-banner-ph" });
+    if (!hasArt) bar.createDiv({ text: "[ 封面 ]  ·  悬停右上角按钮插入封面图片", cls: "wb-banner-ph" });
     const ctl = bar.createDiv({ cls: "wb-banner-bar" });
-    const pick = ctl.createSpan({ text: b.dataUrl ? "换图" : "插入封面", cls: "wb-banner-btn" });
+    const pick = ctl.createSpan({ text: hasArt ? "换图" : "插入封面", cls: "wb-banner-btn" });
     const fi = bar.createEl("input", { cls: "wb-banner-fi", type: "file", accept: "image/*" });
     pick.addEventListener("click", () => fi.click());
     fi.addEventListener("change", () => {
       const file = fi.files && fi.files[0];
       if (!file) return;
       const rd = new FileReader();
-      rd.onload = () => { b.dataUrl = String(rd.result); b.offsetY = 0; b.scale = 1; this.plugin.saveBanner(); this.render(); };
+      const save = async (b64) => {
+        try {
+          const compressed = await this.plugin.compressBanner(b64, 2560, 0.88);
+          const buf = this.plugin.base64ToBuffer(compressed.split(",")[1]);
+          const pdir = this.plugin.app.vault.configDir + "/plugins/workbench-dashboard";
+          const fileName = "banner-" + t + ".jpg";
+          await this.plugin.app.vault.adapter.writeBinary(pdir + "/" + fileName, buf);
+          b.file = fileName; b.dataUrl = null; b.offsetY = 0; b.scale = 1;
+          this.plugin.saveInspoData();
+          this.render();
+        } catch (e) { new Notice("封面保存失败：" + String((e && e.message) || e)); }
+      };
+      rd.onload = () => save(String(rd.result));
       rd.readAsDataURL(file);
     });
-    if (b.dataUrl) {
+    if (hasArt) {
       const reset = ctl.createSpan({ text: "重置", cls: "wb-banner-btn" });
       reset.title = "重置本主题封面位置/缩放";
-      reset.addEventListener("click", () => { b.offsetY = 0; b.scale = 1; this.plugin.saveBanner(); this.render(); });
+      reset.addEventListener("click", () => { b.offsetY = 0; b.scale = 1; this.applyBannerTransform(img, b); this.plugin.saveInspoData(); });
       const rm = ctl.createSpan({ text: "移除", cls: "wb-banner-btn" });
-      rm.addEventListener("click", () => { b.dataUrl = null; b.offsetY = 0; b.scale = 1; this.plugin.saveBanner(); this.render(); });
+      rm.addEventListener("click", () => {
+        if (b.file) { const pdir = this.plugin.app.vault.configDir + "/plugins/workbench-dashboard"; try { this.plugin.app.vault.adapter.remove(pdir + "/" + b.file); } catch (e) {} }
+        b.file = null; b.dataUrl = null; b.offsetY = 0; b.scale = 1;
+        this.plugin.saveInspoData(); this.render();
+      });
       const tip = bar.createDiv({ text: "左键拖动移动 · 右键放大 · Shift+右键缩小 · 自动保存", cls: "wb-banner-tip" });
-      // 左键拖调位置（带 4px 阈值：轻点不触发拖拽，只有真正划动才移动）
       img.addEventListener("mousedown", (e) => {
         if (e.button !== 0) return;
         e.preventDefault();
         const startY = e.clientY;
         const startOff = b.offsetY || 0;
         let dragging = false;
-        const apply = (off, sc) => {
-          const cur = this.root && this.root.querySelector(".wb-banner-img");
-          if (cur) cur.style.transform = "translateY(" + off + "px) scale(" + (sc || (b.scale || 1)) + ")";
-        };
+        const apply = (off, sc) => { const cur = this.root && this.root.querySelector(".wb-banner-img"); if (cur && (b.file || b.dataUrl)) cur.style.transform = "translateY(" + off + "px) scale(" + (sc || (b.scale || 1)) + ")"; };
         const move = (ev) => {
           const dy = ev.clientY - startY;
           if (!dragging && Math.abs(dy) < 4) return;
@@ -2091,23 +2342,25 @@ class WorkbenchView extends ItemView {
           apply(startOff + dy);
         };
         const up = () => {
-          if (dragging) this.plugin.saveBanner();
+          if (dragging) this.plugin.saveInspoData();
           document.removeEventListener("mousemove", move);
           document.removeEventListener("mouseup", up);
         };
         document.addEventListener("mousemove", move);
         document.addEventListener("mouseup", up);
       });
-      // 右键缩放（preventDefault 避免菜单，与页面滚轮滚动错开）：右键=放大，Shift+右键=缩小
       bar.addEventListener("contextmenu", (e) => {
         e.preventDefault();
         b.scale = e.shiftKey ? Math.max(0.5, (b.scale || 1) - 0.1) : Math.min(3, (b.scale || 1) + 0.1);
-        const cur = this.root && this.root.querySelector(".wb-banner-img");
-        if (cur) cur.style.transform = "translateY(" + (b.offsetY || 0) + "px) scale(" + b.scale + ")";
+        this.applyBannerTransform(img, b);
         clearTimeout(this._bannerZoomTimer);
-        this._bannerZoomTimer = setTimeout(() => this.plugin.saveBanner(), 300);
+        this._bannerZoomTimer = setTimeout(() => this.plugin.saveInspoData(), 300);
       });
     }
+  }
+  applyBannerTransform(img, b) {
+    if (img) img.style.transform = "translateY(" + (b.offsetY || 0) + "px) scale(" + (b.scale || 1) + ")";
+    if (img) img.style.transformOrigin = "center top";
   }
   renderHead() {
     const now = new Date();
@@ -2299,6 +2552,40 @@ class WorkbenchView extends ItemView {
     } catch (er) {
       new Notice("创建失败：" + String((er && er.message) || er));
     }
+  }
+  taskEditModal(t) {
+    const app = this.app;
+    const m = new Modal(app);
+    m.setTitle("编辑任务");
+    m.onOpen = () => {
+      const c = m.contentEl;
+      c.createEl("style", { text: ".wb-mml{font-size:12px;color:var(--text-muted);margin-top:10px;}.wb-mmi{width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--background-modifier-border);border-radius:6px;background:var(--background-primary);color:var(--text-normal);font-size:14px;margin-top:4px;}.wb-mmb{margin-top:14px;display:flex;justify-content:flex-end;gap:8px;}.wb-mmb2{margin-top:4px;display:flex;justify-content:flex-start;}.wb-mmlink{font-size:12px;color:var(--accent);cursor:pointer;user-select:none;}" });
+      c.createDiv({ text: "任务内容", cls: "wb-mml" });
+      const ti = c.createEl("input", { type: "text", cls: "wb-mmi" }); ti.value = t.desc;
+      c.createDiv({ text: "截止时间", cls: "wb-mml" });
+      const dt = c.createEl("input", { type: "date", cls: "wb-mmi" }); dt.value = t.due || "";
+      const clr = c.createSpan({ text: "清除日期", cls: "wb-mmlink" });
+      c.createDiv({ text: "标签（逗号分隔）", cls: "wb-mml" });
+      const tg = c.createEl("input", { type: "text", cls: "wb-mmi" }); tg.value = (t.tags || []).join(", ");
+      const save = () => {
+        const desc = ti.value.trim();
+        if (!desc) { new Notice("任务内容不能为空"); return; }
+        const tags = lib.parseInspoTags(tg.value);
+        const due = dt.value || null;
+        m.close();
+        this.apply(t.file, (text) => lib.setTaskText(text, t.ref, desc, tags, due));
+      };
+      ti.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
+      clr.addEventListener("click", () => { dt.value = ""; });
+      const del = c.createEl("span", { text: "删除任务", cls: "wb-mmlink" });
+      del.addEventListener("click", () => { m.close(); this.apply(t.file, (text) => lib.removeTaskLine(text, t.ref)); });
+      const bb = c.createDiv({ cls: "wb-mmb" });
+      const cb = bb.createEl("button", { text: "取消", cls: "mod-secondary", attr: { type: "button" } }); cb.addEventListener("click", () => m.close());
+      const ob = bb.createEl("button", { text: "保存", cls: "mod-cta", attr: { type: "button" } }); ob.addEventListener("click", save);
+      ti.focus();
+    };
+    themeModal(m, this.plugin.theme);
+    m.open();
   }
   newTaskModal() {
     const app = this.app;
@@ -2538,28 +2825,42 @@ class WorkbenchView extends ItemView {
   renderProjectCal(sc, tasks) {
     const today = lib.todayStr();
     const now = new Date();
-    const y = now.getFullYear(), m = now.getMonth();
-    const first = new Date(y, m, 1);
-    const last = new Date(y, m + 1, 0);
-    const firstMon = lib.weekStart(lib.dateStr(first));
-    const lastSun = lib.addDays(lib.weekStart(lib.dateStr(last)), 6);
-    const cells = lib.calendarRange(tasks, firstMon, lastSun);
-    const mLabel = (y) + " 年 " + (m + 1) + " 月";
     const box = sc.createDiv({ cls: "wb-pcal" });
-    box.createDiv({ cls: "wb-pcal-t", text: mLabel });
+    // 月标题 + 翻月导航（往前/回今月/往后），自包含：翻月只重建日期网格，不重渲染整页
+    const head = box.createDiv({ cls: "wb-pcal-head" });
+    const prev = head.createSpan({ text: "‹", cls: "wb-pcal-nav" });
+    const title = head.createSpan({ text: "", cls: "wb-pcal-t" });
+    const next = head.createSpan({ text: "›", cls: "wb-pcal-nav" });
     const grid = box.createDiv({ cls: "wb-pcal-grid wb-pcal-month" });
     const wds = ["一", "二", "三", "四", "五", "六", "日"];
     for (let i = 0; i < 7; i++) grid.createDiv({ text: wds[i], cls: "wb-pcal-dh" });
-    for (const c of cells) {
-      const inMonth = c.date.slice(0, 7) === lib.dateStr(first).slice(0, 7);
-      const cell = grid.createDiv({ cls: "wb-pcal-cell" + (c.date === today ? " today" : "") + (inMonth ? "" : " out") });
-      cell.createSpan({ text: c.date.slice(8), cls: "wb-pcal-num" });
-      for (const t of c.tasks) {
-        const chip = cell.createDiv({ cls: "wb-pcal-task wb-stg-" + lib.stageOf(t) });
-        chip.createSpan({ text: t.desc, cls: "wb-pcal-td" });
-        chip.addEventListener("click", () => this.openNote(t.file));
+    const render = (off) => {
+      grid.querySelectorAll(".wb-pcal-cell").forEach((el) => el.remove());
+      const basis = new Date(now.getFullYear(), now.getMonth() + off, 1);
+      const y = basis.getFullYear(), m = basis.getMonth();
+      const first = new Date(y, m, 1);
+      const last = new Date(y, m + 1, 0);
+      const firstMon = lib.weekStart(lib.dateStr(first));
+      const lastSun = lib.addDays(lib.weekStart(lib.dateStr(last)), 6);
+      const cells = lib.calendarRange(tasks, firstMon, lastSun);
+      title.setText((off === 0 ? "本月 · " : "") + y + " 年 " + (m + 1) + " 月");
+      prev.title = "上一个月";
+      next.title = off > 0 ? "回到上个月" : "下一个月";
+      for (const c of cells) {
+        const inMonth = c.date.slice(0, 7) === lib.dateStr(first).slice(0, 7);
+        const cell = grid.createDiv({ cls: "wb-pcal-cell" + (c.date === today ? " today" : "") + (inMonth ? "" : " out") });
+        cell.createSpan({ text: c.date.slice(8), cls: "wb-pcal-num" });
+        for (const t of c.tasks) {
+          const chip = cell.createDiv({ cls: "wb-pcal-task wb-stg-" + lib.stageOf(t) });
+          chip.createSpan({ text: t.desc, cls: "wb-pcal-td" });
+          chip.addEventListener("click", () => this.openNote(t.file));
+        }
       }
-    }
+    };
+    let cur = this._calOff || 0;
+    prev.addEventListener("click", () => { cur -= 1; this._calOff = cur; render(cur); });
+    next.addEventListener("click", () => { cur += 1; this._calOff = cur; render(cur); });
+    render(cur);
   }
   renderProjectGantt(sc, tasks) {
     const g = lib.ganttRows(tasks);
@@ -2622,6 +2923,22 @@ class WorkbenchView extends ItemView {
         const lv = c.count === 0 ? 0 : c.count === 1 ? 1 : c.count <= 3 ? 2 : c.count <= 5 ? 3 : 4;
         const cell = col.createSpan({ cls: "wb-nhc l" + lv + (c.date === today ? " today" : "") });
         cell.title = c.date + " 完成 " + c.count + " 项";
+        if (c.count > 0) {
+          cell.style.cursor = "pointer";
+          cell.addEventListener("click", () => {
+            const p = this.plugin.dailyDir + "/" + c.date + ".md";
+            const p2 = this.plugin.archiveDir + "/每日/" + c.date + ".md";
+            if (this.app.vault.getAbstractFileByPath(p)) { this.openNote(p); return; }
+            if (this.app.vault.getAbstractFileByPath(p2)) { this.openNote(p2); return; }
+            // 当天无独立日记时，回退打开当天完成的任务所在文件（去重，优先有完成项的文件）
+            const seen = new Set();
+            for (const t of this.state.tasks) {
+              if (!t.done || t.doneDate !== c.date || !t.file || seen.has(t.file)) continue;
+              seen.add(t.file);
+              if (this.app.vault.getAbstractFileByPath(t.file)) { this.openNote(t.file); return; }
+            }
+          });
+        }
       }
     }
     const legend = card.createDiv({ cls: "wb-heat-legend" });
@@ -2643,12 +2960,40 @@ class WorkbenchView extends ItemView {
         const lv = c.count === 0 ? 0 : t <= 0.25 ? 1 : t <= 0.5 ? 2 : t <= 0.8 ? 3 : 4;
         const cell = col.createSpan({ cls: "wb-nhc l" + lv });
         cell.title = c.date + " " + c.count + " 篇";
+        if (c.count > 0) {
+          cell.style.cursor = "pointer";
+          cell.addEventListener("click", () => {
+            const p = this.plugin.dailyDir + "/" + c.date + ".md";
+            const p2 = this.plugin.archiveDir + "/每日/" + c.date + ".md";
+            if (this.app.vault.getAbstractFileByPath(p)) { this.openNote(p); return; }
+            if (this.app.vault.getAbstractFileByPath(p2)) { this.openNote(p2); return; }
+          });
+        }
       }
     }
     const lg1 = card.createDiv({ cls: "wb-heat-legend" });
     lg1.createSpan({ text: "少", cls: "wb-heat-lg" });
     for (let i = 0; i <= 4; i++) lg1.createSpan({ cls: "wb-nhc l" + i + " wb-heat-lgc" });
     lg1.createSpan({ text: "多", cls: "wb-heat-lg" });
+  }
+  renderWeekTrend(card, weeks) {
+    const max = Math.max(1, ...weeks.map((w) => w.done));
+    const box = card.createDiv({ cls: "wb-wt" });
+    const bars = box.createDiv({ cls: "wb-wt-bars" });
+    for (const w of weeks) {
+      const col = bars.createDiv({ cls: "wb-wt-col" });
+      const v = col.createDiv({ cls: "wb-wt-v" });
+      const bar = v.createSpan({ cls: "wb-wt-bar" + (w.done === 0 ? " zero" : "") });
+      bar.style.height = Math.max(3, Math.round((w.done / max) * 100)) + "%";
+      bar.title = w.label + "：完成 " + w.done + " 个任务";
+      col.createSpan({ text: String(w.done), cls: "wb-wt-n" });
+      col.createSpan({ text: w.label, cls: "wb-wt-lb" });
+    }
+    const foot = card.createDiv({ cls: "wb-wt-foot" });
+    const total = weeks.reduce((a, w) => a + w.done, 0);
+    foot.createSpan({ text: "8 周共完成 " + total + " 项", cls: "wb-wt-total" });
+    const s = lib.streak(this.state);
+    foot.createSpan({ text: s > 0 ? "🔥 连续 " + s + " 天" : "今天还没有完成项", cls: "wb-wt-streak" });
   }
   renderOverview() {
     // 顶部：今日概览 + 工作项（同一网格，仅待安排拉长到顶部）
@@ -2681,6 +3026,8 @@ class WorkbenchView extends ItemView {
     this.renderHeat(this.homeCard(bottom, "taskheat", "Task分布"));
     const year = new Date().getFullYear();
     this.renderNoteHeat(this.homeCard(bottom, "noteheat", "笔记分布", year + " 年"));
+    const trendCard = this.homeCard(bottom, "weektrend", "近 8 周完成", "Task趋势");
+    this.renderWeekTrend(trendCard, lib.weekTrend(this.state, 8));
     // 所有行创建完毕后再统一计算列数（确保宽度正确）
     this.updateHomeCols(top);
     this.updateHomeCols(mid);
@@ -2887,6 +3234,29 @@ class WorkbenchView extends ItemView {
     if (ratio) ratio.textContent = p.work + " / " + p.rest;
   }
   pomoText(sec) { const m = Math.floor(sec / 60); const s = sec % 60; return (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s; }
+  pomoBeep(times) {
+    // 轻量音效：WebAudio 短蜂鸣（3 声一次），无音频设备时静默失败
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      let n = 0;
+      const tone = () => {
+        if (n++ >= times) { ctx.close && ctx.close(); return; }
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine"; osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.4);
+        setTimeout(tone, 420);
+      };
+      tone();
+    } catch (e) {}
+  }
   pomoNum(parent, key, min, max) {
     const p = this.pomo();
     const row = parent.createSpan({ cls: "wb-pomo-num" });
@@ -2915,11 +3285,13 @@ class WorkbenchView extends ItemView {
   showPomoAlert(finishedMode) {
     // finishedMode = 刚结束的模式。work 结束→提醒休息；rest 结束→提醒工作
     const isWork = finishedMode === "work";
+    const title = isWork ? "该休息啦" : "该工作啦";
+    new Notice("🍅 " + title + "（番茄钟" + (isWork ? "专注" : "休息") + "结束）", 4000);
+    this.pomoBeep(3);
     const emojis = isWork ? ["☕", "😮‍💨", "🌿", "🧘"] : ["💪", "🔥", "⚡", "🎯"];
     const tips = isWork
       ? ["专注完成！起来走走吧～", "眼睛看看远处，喝口水。", "伸个懒腰，肩膀松一松。", "呼吸几次，休息一下脑子。"]
       : ["休息结束，回来战斗！💪", "状态拉满，开启专注吧。", "深呼吸，进入心流模式。", "目标明确，开干！"];
-    const title = isWork ? "该休息啦" : "该工作啦";
     const sub = tips[Math.floor(Math.random() * tips.length)];
     const mainEmo = emojis[Math.floor(Math.random() * emojis.length)];
     const app = this.app;
@@ -3061,6 +3433,9 @@ class WorkbenchView extends ItemView {
     due.textContent = t.due ? t.due.slice(5) : (t.scheduled ? "⏳ " + t.scheduled.slice(5) : "+ 设日期");
     due.title = t.due ? "截止 " + t.due + "（点击改期）" : (t.scheduled ? "计划开始 " + t.scheduled + "（⏳ 无截止日，点击补一个）" : "设置截止日期（点击）");
     due.addEventListener("click", (e) => { e.stopPropagation(); this.pickDate(due, t); });
+    const editBtn = row.createSpan({ text: "✎", cls: "wb-due wb-due-edit" });
+    editBtn.title = "编辑任务（内容/标签/日期/删除）";
+    editBtn.addEventListener("click", (e) => { e.stopPropagation(); this.taskEditModal(t); });
   }
   renderTagBoard(tag, title, sc) {
     const b = lib.queryTagBoard(this.state, tag);
@@ -3144,7 +3519,38 @@ class WorkbenchView extends ItemView {
     l1.createSpan({ text: t.desc, cls: "wb-cdesc" + (t.done ? " done" : "") });
     const meta = c.createSpan({ cls: "wb-cmeta" });
     for (const tag of t.tags.slice(0, 4)) meta.createSpan({ text: tag, cls: "wb-chip tiny" });
-    if (t.due) meta.createSpan({ text: t.due, cls: "wb-cdue" });
+    if (t.due) { const de = meta.createSpan({ text: t.due, cls: "wb-cdue" }); de.addEventListener("click", (e) => { e.stopPropagation(); this.pickDate(de, t); }); }
+    const edit = meta.createSpan({ text: "✎", cls: "wb-cdue wb-cdue-edit" });
+    edit.title = "编辑任务";
+    edit.addEventListener("click", (e) => { e.stopPropagation(); this.taskEditModal(t); });
+  }
+  _quickJump() {
+    const items = [];
+    const state = this.state;
+    if (state && state.tasks) {
+      for (const t of state.tasks.slice(0, 400)) {
+        items.push({ kind: "任务", icon: "📝", title: t.desc, sub: (t.due ? "📅" + t.due + " " : "") + t.file, path: t.file });
+      }
+    }
+    const folders = ["0-收件箱", "1-灵感", "2-知识积累", "3-资料库", "笔记归档", "项目文档"];
+    if (state && state.notes) {
+      for (const n of state.notes.slice(0, 600)) {
+        if (n.folder.split("/").some((s) => s === "docs" || s.startsWith(".") || s === "_excalidraw" || s === "_mindmap")) continue;
+        const bad = folders.every((fd) => n.folder !== fd && n.folder.indexOf(fd + "/") !== 0);
+        if (bad) continue;
+        items.push({ kind: "笔记", icon: "📄", title: n.name, sub: n.folder, path: n.path });
+      }
+    }
+    if (state && state.files) {
+      for (const p of Object.keys(state.files)) {
+        const base = p.split("/").pop() || "";
+        if (base.indexOf("项目看板.md") >= 0) items.push({ kind: "项目", icon: "▦", title: base.replace("项目看板.md", ""), sub: p, path: p });
+      }
+    }
+    if (this.inspoItems) {
+      for (const it of this.inspoItems) { if (it.file) { items.push({ kind: "灵感", icon: "✦", title: it.title || it.id, sub: it.file, path: it.file }); } }
+    }
+    new QuickJumpModal(this.app, items, (path) => this.openNote(path), this.plugin.theme).open();
   }
   openNote(p) {
     const f = this.app.vault.getAbstractFileByPath(p);
@@ -3847,6 +4253,26 @@ class WorkbenchView extends ItemView {
   }
   dismissBanner() { if (this.bannerEl) { this.bannerEl.remove(); this.bannerEl = null; } }
 }
+class QuickJumpModal extends FuzzySuggestModal {
+  constructor(app, items, onChoose, theme) {
+    super(app);
+    this.items = items || [];
+    this.onChooseItem = onChoose;
+    this.theme = theme;
+  }
+  getItems() { return this.items; }
+  getItemText(item) { return item.title; }
+  renderSuggestion(item, el) {
+    el.empty();
+    el.createSpan({ text: (item.icon || "·") + " ", cls: "wb-qj-ic" });
+    const tt = el.createSpan({ cls: "wb-qj-t", text: item.title });
+    if (item.sub) { el.createSpan({ cls: "wb-qj-s", text: item.sub }); }
+    el.createSpan({ cls: "wb-qj-k", text: item.kind });
+  }
+  onChooseItem(item, evt) {
+    if (this.onChooseItem) this.onChooseItem(item.path);
+  }
+}
 class WorkbenchSettingTab extends PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
@@ -3859,6 +4285,18 @@ class WorkbenchSettingTab extends PluginSettingTab {
     const top = target ? target.scrollTop : 0;
     this.display();
     if (target) requestAnimationFrame(() => { target.scrollTop = top; });
+  }
+  importConfigPick() {
+    const inp = document.createElement("input");
+    inp.type = "file"; inp.accept = ".json,application/json";
+    inp.addEventListener("change", () => {
+      const file = inp.files && inp.files[0];
+      if (!file) return;
+      const rd = new FileReader();
+      rd.onload = () => this.plugin.importConfig(String(rd.result));
+      rd.readAsText(file);
+    });
+    inp.click();
   }
   display() {
     const c = this.containerEl;
@@ -3888,6 +4326,11 @@ class WorkbenchSettingTab extends PluginSettingTab {
     });
     // ===== 数据与存储 =====
     new Setting(c).setName("数据与存储").setHeading();
+    new Setting(c).setName("配置备份与恢复").setDesc("导出当前所有配置到仓库根目录；或从备份 JSON 导入恢复").addButton((b) => {
+      b.setButtonText("导出配置").onClick(() => { this.plugin.exportConfig(); });
+    }).addButton((b) => {
+      b.setButtonText("导入配置").onClick(() => this.importConfigPick());
+    });
     new Setting(c).setName("灵感存储目录").setDesc("灵感收集页中，每个灵感存为目录下一个独立 Markdown 文件").addText((t) => {
       t.setPlaceholder("1-灵感").setValue(this.plugin.inspoDir || "1-灵感").onChange(async (v) => {
         this.plugin.inspoDir = v.trim() || "1-灵感";
@@ -3927,6 +4370,7 @@ class WorkbenchSettingTab extends PluginSettingTab {
         p.work = n;
         if (!p.running && p.mode === "work") p.left = n * 60;
         this.plugin.saveInspoData();
+        this.plugin.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); });
       });
     });
     new Setting(c).setName("休息时长（分钟）").setDesc("默认 5，范围 1–60").addText((t) => {
@@ -3935,6 +4379,7 @@ class WorkbenchSettingTab extends PluginSettingTab {
         p.rest = n;
         if (!p.running && p.mode === "rest") p.left = n * 60;
         this.plugin.saveInspoData();
+        this.plugin.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); });
       });
     });
     // ===== 倒计时 =====（区块化：添加/删除只重建本区块，不动整页滚动）
