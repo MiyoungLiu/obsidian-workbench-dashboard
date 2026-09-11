@@ -459,10 +459,13 @@ function weekStats(state, today) {
   if (!today) today = todayStr();
   const ws = weekStart(today);
   const we = addDays(ws, 6);
+  // done = 本周勾选完成；open = 截止日 ≤ 本周日且未完成（含全部超期欠账）
+  // total = done + open，与今日口径同构：补勾旧账涨分子也涨不了比例，今天/本周未完成必压分母
   const done = state.tasks.filter((t) => t.done && t.doneDate && t.doneDate >= ws && t.doneDate <= we).length;
-  const total = state.tasks.filter((t) => t.due && t.due >= ws && t.due <= we).length;
+  const open = state.tasks.filter((t) => !t.done && t.due && t.due <= we).length;
+  const total = done + open;
   const rate = total > 0 ? Math.round((done / total) * 100) : 0;
-  return { done, total, rate, ws, we };
+  return { done, total, open, rate, ws, we };
 }
 function heatmap(state, today, weeks) {
   if (!today) today = todayStr();
@@ -1007,6 +1010,18 @@ const CSS = `
 .wb-subtab.on, .wb-stagef-btn.on{ background:var(--accent); color:var(--bg); border-color:var(--accent); font-weight:600; }
 .wb-proj-count{ font-size:12px; color:var(--muted); margin-left:auto; }
 .wb-kbwrap{ margin-bottom:18px; }
+.wb-proj-health{ display:flex; align-items:center; gap:10px; padding:6px 0 8px; border-bottom:1px solid var(--hair); margin-bottom:8px; }
+.wb-ph-ring{ width:44px; height:44px; flex:none; }
+.wb-ph-info{ display:flex; flex-direction:column; gap:2px; flex:1; min-width:0; }
+.wb-ph-count{ font-size:12px; font-weight:700; color:var(--text); }
+.wb-ph-stage{ font-size:11px; color:var(--muted); }
+.wb-ph-timebar{ position:relative; height:5px; border-radius:99px; background:color-mix(in srgb, var(--muted) 22%, var(--panel)); margin-top:3px; }
+.wb-ph-timebar.over{ background:color-mix(in srgb, #e8395c 25%, var(--panel)); }
+.wb-ph-tfill{ display:block; height:100%; border-radius:99px; background:linear-gradient(90deg, var(--accent), var(--accent2, #c026d3)); }
+.wb-ph-timebar.over .wb-ph-tfill{ background:linear-gradient(90deg, #e8395c, #ff6b8a); }
+.wb-ph-tmark{ position:absolute; top:-2px; width:2px; height:9px; background:var(--text); border-radius:1px; }
+.wb-ph-tmile{ position:absolute; right:0; top:-2px; width:8px; height:8px; background:var(--accent); border-radius:2px; transform:rotate(45deg); }
+.wb-ph-over{ font-size:11px; color:#e8395c; font-weight:600; }
 .wb-plist{ border:1px solid var(--border); border-radius:12px; overflow:hidden; }
 .wb-plist-h{ display:grid; grid-template-columns:1fr 90px 80px; gap:10px; padding:8px 14px; background:var(--panel2); font-size:11px; color:var(--muted); letter-spacing:.05em; }
 .wb-plist-r{ display:grid; grid-template-columns:1fr 90px 80px; gap:10px; padding:8px 14px; border-top:1px solid var(--hair); font-size:13px; align-items:center; }
@@ -1031,6 +1046,12 @@ const CSS = `
 .wb-pcal-task{ font-size:11px; padding:3px 6px; border-radius:5px; margin-bottom:3px; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .wb-pcal-task:hover{ filter:brightness(1.1); }
 .wb-gantt{ border:1px solid var(--border); border-radius:12px; padding:14px; background:var(--panel); }
+.wb-gantt-todayline{ position:absolute; top:0; bottom:0; width:0; border-left:1px dashed color-mix(in srgb, var(--accent) 60%, transparent); z-index:2; }
+.wb-gantt-elapsed{ position:absolute; top:0; bottom:0; left:0; background:color-mix(in srgb, var(--accent) 30%, transparent); border-radius:4px 0 0 4px; pointer-events:none; }
+.wb-gantt-elapsed.over{ background:color-mix(in srgb, #e8395c 40%, transparent); }
+.wb-gantt-bar.done{ opacity:.5; }
+.wb-gantt{ position:relative; }
+.wb-colcount{ display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; border-radius:99px; font-size:10px; font-weight:700; color:#fff; margin-left:4px; }
 .wb-gantt-axis{ display:flex; justify-content:space-between; font-size:10px; color:var(--muted); margin-left:180px; margin-bottom:8px; }
 .wb-gantt-row{ display:flex; align-items:center; gap:10px; margin-bottom:6px; }
 .wb-gantt-lb{ width:170px; flex:none; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -1088,6 +1109,20 @@ const CSS = `
 .wb-cd-sub{ display:flex; align-items:center; gap:10px; font-size:12px; }
 .wb-cd-stat{ color:var(--muted); font-variant-numeric:tabular-nums; }
 .wb-cd-stat:first-child{ color:var(--text); }
+.wb-cd-list{ display:flex; flex-direction:column; gap:8px; margin-top:10px; flex:1; min-height:0; overflow-y:auto; }
+.wb-cd-item{ display:grid; grid-template-columns:1fr auto; grid-template-rows:auto auto; gap:2px 10px; align-items:center; padding:8px 10px; border:1px solid var(--hair); border-radius:9px; background:var(--panel2); }
+.wb-cd-item.today{ border-color:var(--accent); }
+.wb-cd-item.past{ opacity:.6; }
+.wb-cd-nm{ font-size:12px; font-weight:600; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wb-cd-date{ font-size:10px; font-weight:400; color:var(--muted); }
+.wb-cd-row-r{ grid-row:1; display:flex; align-items:baseline; gap:3px; font-variant-numeric:tabular-nums; }
+.wb-cd-mininum{ font-size:18px; font-weight:800; color:var(--text); line-height:1; }
+.wb-cd-today{ font-size:13px; font-weight:800; color:var(--accent); }
+.wb-cd-pastnum{ font-size:12px; font-weight:600; color:var(--muted); }
+.wb-cd-mini{ grid-column:1 / -1; height:4px; border-radius:99px; background:color-mix(in srgb, var(--muted) 22%, var(--panel)); overflow:hidden; }
+.wb-cd-minifill{ display:block; height:100%; border-radius:99px; background:linear-gradient(90deg, #14141a, #e8395c); opacity:.8; }
+.wb-root[data-theme="a"] .wb-cd-minifill{ background:linear-gradient(90deg, #2f6bff, #c026d3); }
+.wb-root[data-theme="c"] .wb-cd-minifill{ background:linear-gradient(90deg, #2563eb, #9333ea); }
 /* 番茄钟（居中：标题/比例 + 模式药丸 + 大时间 + 紧凑按钮，点标题切换工作/休息） */
 .wb-pomo{ display:flex; flex-direction:column; flex:1; min-height:0; }
 .wb-pomo-head{ display:flex; align-items:center; justify-content:space-between; cursor:pointer; user-select:none; padding:2px; border-radius:8px; }
@@ -1234,6 +1269,8 @@ class WorkbenchPlugin extends Plugin {
   inspoFilter = "all";
   glow = "high";
   countdownTarget = "";
+  countdowns = [];
+  archiveDir = "笔记归档";
   projStages = null;
   inspoStages = null;
   async onload() {
@@ -1261,10 +1298,15 @@ class WorkbenchPlugin extends Plugin {
     if (data && data.glow) this.glow = data.glow;
     if (data && data.countdownTarget) this.countdownTarget = data.countdownTarget;
     if (data && data.countdownLabel) this.countdownLabel = data.countdownLabel;
+    this.countdowns = (data && Array.isArray(data.countdowns)) ? data.countdowns.filter((x) => x && x.date && /^\d{4}-\d{2}-\d{2}$/.test(x.date)).map((x) => ({ label: String(x.label || "").trim(), date: x.date, since: (x.since && x.since.length === 10) ? x.since : undefined })) : [];
+    if (!this.countdowns.length && data && data.countdownTarget && /^\d{4}-\d{2}-\d{2}$/.test(data.countdownTarget)) {
+      this.countdowns = [{ label: String(data.countdownLabel || "").trim(), date: data.countdownTarget }];
+    }
     this.inspoDir = (data && data.inspoDir) || "1-灵感";
     this.dailyDir = (data && data.dailyDir) || "0-收件箱/每日";
     this.weeklyDir = (data && data.weeklyDir) || "0-收件箱/每周";
     this.projDir = (data && data.projDir) || "项目文档";
+    this.archiveDir = (data && data.archiveDir) || "笔记归档";
     this.wbTitle = (data && data.wbTitle) || "Lyra";
     this.wbEyebrow = (data && data.wbEyebrow != null) ? data.wbEyebrow : "MIYOUNG · WORKBENCH";
     this.projStages = (data && data.projStages) || null;
@@ -1336,7 +1378,7 @@ class WorkbenchPlugin extends Plugin {
   setWallView(v) { this.wallView = v; this.saveBanner(); this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); }); }
   setPage(p) { this.page = p; this.saveBanner(); this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); }); }
   setInspoFilter(v) { this.inspoFilter = v; this.saveInspoData(); this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); }); }
-  saveInspoData() { this.saveData({ theme: this.theme, areaH: this.areaH, page: this.page, projView: this.projView, projStage: this.projStage, wallView: this.wallView, banner: this.banner, pomo: this.pomo, inspirations: this.inspirations, inspoFilter: this.inspoFilter, glow: this.glow, countdownTarget: this.countdownTarget, countdownLabel: this.countdownLabel, inspoDir: this.inspoDir, dailyDir: this.dailyDir, weeklyDir: this.weeklyDir, projDir: this.projDir, wbTitle: this.wbTitle, wbEyebrow: this.wbEyebrow, projStages: this.projStages, inspoStages: this.inspoStages }); }
+  saveInspoData() { const cd0 = (this.countdowns && this.countdowns[0]) || null; this.saveData({ theme: this.theme, areaH: this.areaH, page: this.page, projView: this.projView, projStage: this.projStage, wallView: this.wallView, banner: this.banner, pomo: this.pomo, inspirations: this.inspirations, inspoFilter: this.inspoFilter, glow: this.glow, countdownTarget: cd0 ? cd0.date : "", countdownLabel: cd0 ? cd0.label : "", countdowns: this.countdowns, inspoDir: this.inspoDir, dailyDir: this.dailyDir, weeklyDir: this.weeklyDir, projDir: this.projDir, archiveDir: this.archiveDir, wbTitle: this.wbTitle, wbEyebrow: this.wbEyebrow, projStages: this.projStages, inspoStages: this.inspoStages }); }
   // 项目阶段（归一化，4-6 槽，默认 3 启用）
   getProjStages() { return lib.normStages(this.projStages, 6, lib.DEFAULT_PROJ_STAGES); }
   // 项目阶段——仅启用
@@ -2111,6 +2153,7 @@ class WorkbenchView extends ItemView {
       { ic: "▤", label: "新建周记", tip: "打开本周周记（无则创建；已打开则跳转）", run: () => this.openPeriodicNote("weekly") },
       { ic: "✚", label: "新建任务", tip: "弹窗新建任务（写今日笔记）", run: () => this.newTaskModal() },
       { ic: "🗂", label: "新建项目", tip: "新建项目看板（模板）", run: () => this.plugin.newProjectBoard() },
+      { ic: "📦", label: "归档", tip: "一键归档日记/周记到归档目录（自动修复链接）", run: () => this.archiveModal() },
     ];
     for (const it of items) {
       const b = bar.createSpan({ cls: "wb-tb-btn" });
@@ -2139,6 +2182,103 @@ class WorkbenchView extends ItemView {
       this.execCmd(pnIds);
     } else {
       this.createPeriodicNoteFallback(kind, p);
+    }
+  }
+  archiveModal() {
+    const app = this.app;
+    const m = new Modal(app);
+    m.setTitle("一键归档");
+    m.onOpen = () => {
+      const c2 = m.contentEl;
+      c2.createEl("style", { text: ".wb-mml{font-size:12px;color:var(--text-muted);margin-top:10px;margin-bottom:10px;}.wb-mmb{margin-top:14px;display:flex;justify-content:flex-end;gap:8px;}.wb-arc-tabs{display:flex;gap:6px;margin-bottom:10px;}.wb-arc-tab{flex:1;padding:8px 12px;border:1px solid var(--background-modifier-border);border-radius:8px;background:var(--background-primary);color:var(--text-normal);font-size:13px;cursor:pointer;text-align:center;transition:border-color .12s,background .12s;}.wb-arc-tab.active{border-color:var(--interactive-accent);background:var(--interactive-accent);color:#fff;font-weight:600;}.wb-arc-list{max-height:220px;overflow-y:auto;border:1px solid var(--background-modifier-border);border-radius:8px;margin-bottom:10px;padding:4px;}.wb-arc-file{padding:6px 10px;border-radius:6px;font-size:12px;color:var(--text-normal);cursor:pointer;font-variant-numeric:tabular-nums;}.wb-arc-file:hover{background:var(--background-modifier-hover);}.wb-arc-file.sel{background:var(--interactive-accent);color:#fff;}.wb-arc-preview{padding:10px 12px;border:1px solid var(--background-modifier-border);border-radius:8px;background:var(--background-secondary);font-size:11px;line-height:1.6;margin-bottom:4px;}.wb-arc-src{color:var(--text-normal);}.wb-arc-dst{color:var(--text-muted);}.wb-arc-miss{color:var(--text-error);font-weight:600;}" });
+      const arcDir = this.plugin.archiveDir || "笔记归档";
+      c2.createDiv({ text: "从下面列表选择要归档的笔记（移到「" + arcDir + "」，自动修复链接）", cls: "wb-mml" });
+      let kind = "daily";
+      let pick = null;
+      const tabs = c2.createDiv({ cls: "wb-arc-tabs" });
+      const tabD = tabs.createEl("button", { cls: "wb-arc-tab active", text: "📅 日记", attr: { type: "button" } });
+      const tabW = tabs.createEl("button", { cls: "wb-arc-tab", text: "▤ 周记", attr: { type: "button" } });
+      const listBox = c2.createDiv({ cls: "wb-arc-list" });
+      const preview = c2.createDiv({ cls: "wb-arc-preview" });
+      const srcLine = preview.createDiv({ cls: "wb-arc-src" });
+      const dstLine = preview.createDiv({ cls: "wb-arc-dst" });
+      const bb = c2.createDiv({ cls: "wb-mmb" });
+      const archiveBtn = bb.createEl("button", { text: "📦 归档", cls: "mod-cta", attr: { type: "button" } });
+      const cancelBtn = bb.createEl("button", { text: "取消", cls: "mod-secondary", attr: { type: "button" } });
+      cancelBtn.addEventListener("click", () => m.close());
+      const updatePreview = () => {
+        const srcDir = kind === "weekly" ? this.plugin.weeklyDir : this.plugin.dailyDir;
+        const subDir = kind === "weekly" ? "每周" : "每日";
+        if (!pick) {
+          srcLine.setText("源：（先从上面列表选择一篇）");
+          dstLine.setText("→ " + arcDir + "/" + subDir + "/");
+          archiveBtn.disabled = true;
+          return;
+        }
+        srcLine.setText("源：" + srcDir + "/" + pick + ".md");
+        dstLine.setText("→ " + arcDir + "/" + subDir + "/" + pick + ".md");
+        archiveBtn.disabled = false;
+      };
+      const loadList = () => {
+        pick = null;
+        listBox.empty();
+        const srcDir = kind === "weekly" ? this.plugin.weeklyDir : this.plugin.dailyDir;
+        const folder = app.vault.getAbstractFileByPath(srcDir);
+        let files = [];
+        if (folder && folder.children) files = folder.children.filter((f) => f.name && f.name.endsWith(".md"));
+        files.sort((a, b) => b.name.localeCompare(a.name));
+        if (!files.length) {
+          listBox.createDiv({ text: "（" + srcDir + " 下没有笔记）", cls: "wb-arc-miss" });
+        }
+        const show = files.slice(0, 50);
+        for (const f of show) {
+          const item = listBox.createDiv({ cls: "wb-arc-file", text: f.name.replace(/.md$/, "") });
+          item.addEventListener("click", () => {
+            listBox.querySelectorAll(".wb-arc-file").forEach((el) => el.removeClass("sel"));
+            item.addClass("sel");
+            pick = f.name.replace(/.md$/, "");
+            updatePreview();
+          });
+        }
+        updatePreview();
+      };
+      tabD.addEventListener("click", () => { kind = "daily"; tabD.addClass("active"); tabW.removeClass("active"); loadList(); });
+      tabW.addEventListener("click", () => { kind = "weekly"; tabW.addClass("active"); tabD.removeClass("active"); loadList(); });
+      archiveBtn.addEventListener("click", () => { m.close(); this.archiveCurrentNote(kind, pick); });
+      loadList();
+    };
+    themeModal(m, this.plugin.theme);
+    m.open();
+  }
+  async archiveCurrentNote(kind, fname) {
+    const app = this.app;
+    // fname = 文件名（不含 .md）；缺省回退到今天/本周
+    const name = fname || (kind === "weekly" ? lib.isoYearWeek(new Date()) : lib.todayStr());
+    const srcDir = kind === "weekly" ? this.plugin.weeklyDir : this.plugin.dailyDir;
+    const srcPath = srcDir + "/" + name + ".md";
+    const subDir = kind === "weekly" ? "每周" : "每日";
+    const dstDir = this.plugin.archiveDir + "/" + subDir;
+    const dstPath = dstDir + "/" + name + ".md";
+    const srcFile = app.vault.getAbstractFileByPath(srcPath);
+    if (!srcFile) { new Notice("未找到该" + (kind === "weekly" ? "周记" : "日记") + "：" + srcPath); return; }
+    if (app.vault.getAbstractFileByPath(dstPath)) { new Notice("目标已存在，未归档：" + dstPath); return; }
+    try {
+      if (!app.vault.getAbstractFileByPath(dstDir)) {
+        const mkDir = app.vault.createFolder || app.vault.createDirectory;
+        if (typeof mkDir === "function") await mkDir.call(app.vault, dstDir);
+      }
+      if (typeof app.vault.rename === "function") {
+        await app.vault.rename(srcFile, dstPath);
+      } else {
+        const content = await app.vault.read(srcFile);
+        await app.vault.create(dstPath, content);
+        await app.vault.delete(srcFile);
+      }
+      new Notice("已归档到 " + dstPath);
+      this.refresh().catch(() => {});
+    } catch (e) {
+      new Notice("归档失败：" + String((e && e.message) || e));
+      console.error("[Lyra] archive error", e);
     }
   }
   async createPeriodicNoteFallback(kind, p) {
@@ -2319,7 +2459,7 @@ class WorkbenchView extends ItemView {
         window.removeEventListener("mouseup", mu);
         this.plugin.areaH = this.plugin.areaH || {};
         this.plugin.areaH[aboveId] = Math.round(target.getBoundingClientRect().height);
-        this.plugin.saveData({ theme: this.plugin.theme, areaH: this.plugin.areaH });
+        this.plugin.saveInspoData();
       };
       window.addEventListener("mousemove", mm);
       window.addEventListener("mouseup", mu);
@@ -2327,14 +2467,49 @@ class WorkbenchView extends ItemView {
     h.addEventListener("dblclick", () => {
       if (this.plugin.areaH) delete this.plugin.areaH[aboveId];
       target.style.height = "";
-      this.plugin.saveData({ theme: this.plugin.theme, areaH: this.plugin.areaH });
+      this.plugin.saveInspoData();
     });
   }
-  renderTagBoardInto(sc, tag, title, bd) {
+  renderProjHealth(box, bd, stageNames) {
+    const board = lib.queryTagBoard(this.state, bd.tag);
+    const total = board.todo.length + board.doing.length + board.done.length;
+    const done = board.done.length;
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    const wrap = box.createDiv({ cls: "wb-proj-health" });
+    const ring = wrap.createDiv({ cls: "wb-ph-ring" });
+    ring.innerHTML = ringSVG(pct, 44);
+    const info = wrap.createDiv({ cls: "wb-ph-info" });
+    info.createSpan({ text: done + " / " + total + " 任务", cls: "wb-ph-count" });
+    // 当前阶段：第一条进行中/待办任务的阶段标签（tags 与项目阶段名取交集）
+    const cur = board.doing[0] || board.todo[0];
+    let stageLabel;
+    if (!cur) stageLabel = total > 0 ? "全部完成" : "无任务";
+    else {
+      const names = (stageNames && stageNames.length) ? stageNames : ["待办", "进行中"];
+      const hit = names.find((n) => cur.tags && cur.tags.includes(n));
+      stageLabel = hit || "待办";
+    }
+    info.createSpan({ text: "当前：" + stageLabel, cls: "wb-ph-stage" });
+    // 时间进度条（bd 平铺字段 start/end，来自看板 frontmatter）
+    if (bd.start && bd.end) {
+      const now = lib.todayStr();
+      const totalDays = this.daysBetween(bd.start, bd.end);
+      const elapsed = this.daysBetween(bd.start, now);
+      const tpct = totalDays > 0 ? Math.max(0, Math.min(100, Math.round((elapsed / totalDays) * 100))) : 0;
+      const over = now > bd.end;
+      const tb = info.createDiv({ cls: "wb-ph-timebar" + (over ? " over" : "") });
+      const tf = tb.createSpan({ cls: "wb-ph-tfill" }); tf.style.width = tpct + "%";
+      const tm = tb.createSpan({ cls: "wb-ph-tmark" }); tm.style.left = tpct + "%";
+      tb.title = bd.start + " → " + bd.end + "（时间已过 " + tpct + "%）";
+      if (over) info.createSpan({ text: " 已超期", cls: "wb-ph-over" });
+    }
+  }
+    renderTagBoardInto(sc, tag, title, bd) {
     const box = sc.createDiv({ cls: "wb-kbwrap" });
     box.createDiv({ cls: "wb-ktitle", text: title });
     const stages = this.plugin.projStagesFor(bd);
     const stageNames = stages.map((s) => s.name);
+    this.renderProjHealth(box, bd, stageNames);
     const cols = lib.stageBoard(this.state, tag, stages);
     this.boardGrid(box, cols.map((c) => ({ heading: c.heading, color: c.color, tasks: c.tasks, file: "", stages: stageNames })), "super");
   }
@@ -2396,17 +2571,37 @@ class WorkbenchView extends ItemView {
       const d = lib.addDays(g.start, i);
       axis.createSpan({ text: d.slice(5), cls: "wb-gantt-ax" });
     }
+    const today = lib.todayStr();
+    const todayOff = this.daysBetween(g.start, today);
+    // today reference line
+    if (todayOff >= 0 && todayOff <= total) {
+      const tl = box.createDiv({ cls: "wb-gantt-todayline" });
+      tl.style.left = "calc(180px + " + ((todayOff / Math.max(1, total)) * 100) + "%)";
+      tl.title = "今天 " + today;
+    }
     for (const r of g.rows) {
       const row = box.createDiv({ cls: "wb-gantt-row" });
-      row.createSpan({ text: r.desc, cls: "wb-gantt-lb" + (r.done ? " done" : "") });
+      row.createSpan({ text: (r.done ? "✓ " : "") + r.desc, cls: "wb-gantt-lb" + (r.done ? " done" : "") });
       const track = row.createDiv({ cls: "wb-gantt-track" });
       const left = (this.daysBetween(g.start, r.start) / Math.max(1, total)) * 100;
       const width = Math.max(2, ((this.daysBetween(r.start, r.end) + 1) / Math.max(1, total)) * 100);
-      const bar = track.createDiv({ cls: "wb-gantt-bar wb-stg-" + r.stage });
+      const bar = track.createDiv({ cls: "wb-gantt-bar wb-stg-" + r.stage + (r.done ? " done" : "") });
       bar.style.left = left + "%";
       bar.style.width = width + "%";
       bar.title = r.desc + "  " + r.start + " ~ " + r.end;
       bar.addEventListener("click", () => this.openNote(r.file));
+      // in-bar elapsed layer
+      if (!r.done) {
+        const rStartOff = this.daysBetween(g.start, r.start);
+        const rEndOff = this.daysBetween(g.start, r.end);
+        const inBar = Math.max(0, Math.min(todayOff, rEndOff) - rStartOff);
+        const span = this.daysBetween(r.start, r.end) + 1;
+        if (inBar > 0) {
+          const ep = track.createDiv({ cls: "wb-gantt-elapsed" + (todayOff > rEndOff ? " over" : "") });
+          ep.style.left = "0";
+          ep.style.width = (inBar / Math.max(1, span)) * 100 + "%";
+        }
+      }
     }
   }
   daysBetween(a, b) {
@@ -2531,7 +2726,7 @@ class WorkbenchView extends ItemView {
         h.classList.remove("on");
         this.plugin.areaH = this.plugin.areaH || {};
         this.plugin.areaH["pulseRow"] = currentH();
-        this.plugin.saveData({ theme: this.plugin.theme, areaH: this.plugin.areaH });
+        this.plugin.saveInspoData();
       };
       window.addEventListener("mousemove", mm);
       window.addEventListener("mouseup", mu);
@@ -2539,7 +2734,7 @@ class WorkbenchView extends ItemView {
     h.addEventListener("dblclick", () => {
       rowEl.style.removeProperty("--wb-list-h");
       if (this.plugin.areaH) delete this.plugin.areaH["pulseRow"];
-      this.plugin.saveData({ theme: this.plugin.theme, areaH: this.plugin.areaH });
+      this.plugin.saveInspoData();
     });
   }
   homeCard(grid, mod, title, sub) {
@@ -2586,8 +2781,52 @@ class WorkbenchView extends ItemView {
   renderPomodoroCard(card) { this.renderPomodoro(card); }
   renderCountdown(card) {
     const year = new Date().getFullYear();
-    const target = this.plugin.countdownTarget && /^\d{4}-\d{2}-\d{2}$/.test(this.plugin.countdownTarget) ? this.plugin.countdownTarget : (year + 1) + "-01-01";
-    const label = (this.plugin.countdownLabel || "").trim();
+    const items = (this.plugin.countdowns && this.plugin.countdowns.length ? this.plugin.countdowns.slice() : [{ label: "", date: (year + 1) + "-01-01" }]);
+    if (items.length > 1) {
+      const head = card.createDiv({ cls: "wb-cd-head" });
+      head.createSpan({ text: "倒计时", cls: "wb-cd-title" });
+      head.createSpan({ text: items.length + " 个目标", cls: "wb-cd-tag" });
+      const list = card.createDiv({ cls: "wb-cd-list" });
+      // 每条进度 = 从设定日(since)到目标日走过多少%；旧数据无 since 按一年窗口估算
+      const th = this.plugin.theme || "a";
+      const CD_PAL = { a: [["#2f6bff","#c026d3"],["#0ea5e9","#22d3ee"],["#f59e0b","#f7768e"],["#10b981","#73daca"],["#bb9af7","#7dcfff"]], b: [["#b06a3a","#d4a96a"],["#9c3554","#c8954e"],["#4a7c59","#b06a3a"],["#8b5a2b","#a3b18a"],["#7d5536","#e0af68"]], c: [["#ff5c8a","#f472b6"],["#2dd4bf","#34d399"],["#fbbf24","#fb923c"],["#a78bfa","#60a5fa"],["#f472b6","#a78bfa"]] };
+      const psets = CD_PAL[th] || CD_PAL.a;
+      items.forEach((it, idx) => {
+        const st = lib.countdownStats(it.date);
+        const today = st.daysLeft === 0;
+        const isPast = it.date < lib.todayStr();
+        let pct;
+        if (isPast || today) pct = 100;
+        else if (it.since && it.since.length === 10 && it.date > it.since) {
+          const whole = this.daysBetween(it.since, it.date);
+          const gone = this.daysBetween(it.since, lib.todayStr());
+          pct = whole > 0 ? Math.max(0, Math.min(100, Math.round((gone / whole) * 100))) : 0;
+        } else {
+          pct = Math.max(0, Math.min(100, Math.round(((365 - st.daysLeft) / 365) * 100)));
+        }
+        const row = list.createDiv({ cls: "wb-cd-item" + (today ? " today" : "") + (isPast ? " past" : "") });
+        const nm = row.createDiv({ cls: "wb-cd-nm" });
+        nm.createSpan({ text: it.label || it.date });
+        nm.createSpan({ text: it.label ? " " + String.fromCharCode(183) + " " + it.date : "", cls: "wb-cd-date" });
+        const num = row.createDiv({ cls: "wb-cd-row-r" });
+        if (today) num.createSpan({ text: "今天！", cls: "wb-cd-today" });
+        else if (isPast) num.createSpan({ text: "已过 " + this.daysBetween(it.date, lib.todayStr()) + " 天", cls: "wb-cd-pastnum" });
+        else num.createSpan({ text: String(st.daysLeft), cls: "wb-cd-mininum" });
+        if (!today && !isPast) num.createSpan({ text: "天", cls: "wb-cd-unit" });
+        const pctNote = it.since && it.since.length === 10 && it.date > it.since
+          ? "从 " + it.since + " 设定起已过 " + pct + "%" + (today || isPast ? "" : " · 剩 " + st.daysLeft + " 天")
+          : "按一年窗口估算 " + pct + "%" + (today || isPast ? "" : " · 剩 " + st.daysLeft + " 天");
+        const mini = row.createDiv({ cls: "wb-cd-mini", attr: { title: pctNote } });
+        const mf = mini.createSpan({ cls: "wb-cd-minifill" });
+        mf.style.width = pct + "%";
+        const pc = psets[idx % psets.length];
+        mf.style.background = "linear-gradient(90deg, " + pc[0] + ", " + pc[1] + ")";
+      });
+      return;
+    }
+    const it0 = items[0];
+    const target = it0.date;
+    const label = (it0.label || "").trim();
     const head = card.createDiv({ cls: "wb-cd-head" });
     head.createSpan({ text: label ? label : "倒计时", cls: "wb-cd-title" });
     head.createSpan({ text: "剩余天数", cls: "wb-cd-tag" });
@@ -2602,7 +2841,7 @@ class WorkbenchView extends ItemView {
     fill.style.width = lib.countdownStats(target).pct + "%";
     const stat = foot.createDiv({ cls: "wb-cd-sub" });
     stat.createSpan({ text: "剩余 " + lib.countdownStats(target).weeksLeft + " 周", cls: "wb-cd-stat" });
-    stat.createSpan({ text: "·  " + year + " 年已过 " + lib.countdownStats(target).pct + "%", cls: "wb-cd-stat" });
+    stat.createSpan({ text: " ·  " + year + " 年已过 " + lib.countdownStats(target).pct + "%", cls: "wb-cd-stat" });
   }
   pomo() { return (this.plugin.pomo = this.plugin.pomo || { work: 25, rest: 5, mode: "work", left: 25 * 60, running: false }); }
   renderPomodoro(card) {
@@ -2981,21 +3220,21 @@ class WorkbenchView extends ItemView {
     // 三套调色板：星团色 / 背景渐变(中心→边缘) / 环境星色 / 文本色 / 暗角色 / 提示框色
     const PAL = theme === "b" ? {
       // 美拉德：暖纸径向渐变底(中心暖亮→边缘柔深) + 焦糖/琥珀/肉桂/榛果/可可星点
-      star: ["#b06a3a", "#c8954e", "#8b5a2b", "#d4a96a", "#9c6644", "#bf7e4b", "#a0734a", "#7d5536"],
+      star: ["#d9480f", "#a61e4d", "#cf5c00", "#0c8599", "#c2255c", "#2b8a3e", "#5f3dc4", "#364fc7"],
       bgIn: "#ffffff", bgMid: "#fcf8f2", bgOut: "#f3ece1",
       ambient: "#c4a878", text: "#4a3520", dot: "#b06a3a",
       vignette: "rgba(160,130,80,.10)", tipBg: "rgba(255,250,240,.96)", tipSub: "#9c6644",
       glowColor: "rgba(220,170,110,.18)",
     } : theme === "c" ? {
       // 多巴胺：柔彩径向渐变底(中心亮白→边缘薰衣草) + 高饱和粉/青/黄/紫/橙/绿/蓝/品红星点
-      star: ["#ff5c8a", "#2dd4bf", "#fbbf24", "#a78bfa", "#fb7185", "#34d399", "#60a5fa", "#f472b6"],
+      star: ["#ff2d6f", "#009e7b", "#e8590c", "#7c4dff", "#2979ff", "#d6409f", "#0b7285", "#5c940d"],
       bgIn: "#ffffff", bgMid: "#fdfcff", bgOut: "#f5f2fc",
       ambient: "#b8a8d4", text: "#2e2440", dot: "#a78bfa",
       vignette: "rgba(160,140,200,.10)", tipBg: "rgba(255,255,255,.96)", tipSub: "#7c5cbf",
       glowColor: "rgba(180,150,255,.16)",
     } : {
       // 深邃蓝太空（默认）
-      star: ["#7aa2f7", "#e0af68", "#9ece6a", "#bb9af7", "#f7768e", "#7dcfff", "#ff9e64", "#73daca"],
+      star: ["#7aa2f7", "#e0af68", "#9ece6a", "#bb9af7", "#f7768e", "#7dcfff", "#ff9e64", "#73daca", "#f2c94c", "#ff7edb", "#a9dc76", "#8f9fff"],
       bgIn: "#0c1530", bgMid: "#070d1e", bgOut: "#03060f",
       ambient: "#cdd6f4", text: "#e8ecf4", dot: "#7aa2f7",
       vignette: "rgba(0,0,0,.5)", tipBg: "rgba(8,14,26,.95)", tipSub: "#7aa2f7",
@@ -3007,17 +3246,31 @@ class WorkbenchView extends ItemView {
     const hash = (str, salt) => { let h = 5381; const s = str + salt; for (let i = 0; i < s.length; i++) h = ((h << 5) + h) + s.charCodeAt(i); return (h >>> 0) / 0xFFFFFFFF; };
     const aHex = (a) => Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, "0");
     // 预渲染星点精灵（辉光 + 衍射星芒），避免每帧 createRadialGradient
-    function makeSprite(color, spikes) {
+    function makeSprite(color, spikes, style) {
       const sz = 64, mid = sz / 2;
       const c = document.createElement("canvas");
       c.width = c.height = sz;
       const x = c.getContext("2d");
       const g = x.createRadialGradient(mid, mid, 0, mid, mid, mid);
-      g.addColorStop(0, "rgba(255,255,255,1)");
-      g.addColorStop(0.08, color);
-      g.addColorStop(0.22, color + "66");
-      g.addColorStop(0.5, color + "1a");
-      g.addColorStop(1, "rgba(0,0,0,0)");
+      if (style === "solid" || style === "solidCore") {
+        // 亮背景主题：小实心点（可见主体≈精灵28%，与A亮核视觉等大），边缘快速收干净
+        if (style === "solidCore") {
+          g.addColorStop(0, "#241f33");
+          g.addColorStop(0.10, color);
+        } else {
+          g.addColorStop(0, color);
+        }
+        g.addColorStop(0.28, color);
+        g.addColorStop(0.38, color + "70");
+        g.addColorStop(0.48, "rgba(0,0,0,0)");
+      } else {
+        // 暗背景主题：辉光 + 白心
+        g.addColorStop(0, "rgba(255,255,255,1)");
+        g.addColorStop(0.08, color);
+        g.addColorStop(0.22, color + "66");
+        g.addColorStop(0.5, color + "1a");
+        g.addColorStop(1, "rgba(0,0,0,0)");
+      }
       x.fillStyle = g;
       x.fillRect(0, 0, sz, sz);
       if (spikes) {
@@ -3036,8 +3289,9 @@ class WorkbenchView extends ItemView {
       }
       return c;
     }
-    const sprites = COLORS.map((c) => makeSprite(c, false));
-    const spikeSprites = COLORS.map((c) => makeSprite(c, true));
+    const spriteStyle = theme === "b" ? "solid" : theme === "c" ? "solidCore" : "glow";
+    const sprites = COLORS.map((c) => makeSprite(c, false, spriteStyle));
+    const spikeSprites = theme === "b" ? sprites : COLORS.map((c) => makeSprite(c, true, spriteStyle));
     // 按 .md 实际目录层级分团（不用白名单），团中心斐波那契球面分布
     const dirSet = new Map();
     for (const n of allNotesRaw) {
@@ -3053,8 +3307,8 @@ class WorkbenchView extends ItemView {
       const color = COLORS[coli];
       const stars = notes.map((n) => {
         const ang = hash(n.path, "a") * Math.PI * 2;
-        const rr = Math.sqrt(hash(n.path, "r")) * 55;
-        const dz = (hash(n.path, "z") - 0.5) * 90;
+        const rr = Math.sqrt(hash(n.path, "r")) * (35 + hash(n.path, "r2") * 50);
+        const dz = (hash(n.path, "z") - 0.5) * 100;
         const recency = Math.max(0, Math.min(1, 1 - (now - n.mtime) / THIRTY));
         return { x: 0, y: 0, z: 0, recency, color, coli, note: n, phase: hash(n.path, "p") * Math.PI * 2, _ox: Math.cos(ang) * rr, _oy: Math.sin(ang) * rr, _oz: dz };
       });
@@ -3103,8 +3357,6 @@ class WorkbenchView extends ItemView {
     for (const s of allStars) { const r = find(s); if (!communities.has(r)) communities.set(r, []); communities.get(r).push(s); }
     // 社区中心点：斐波那契球面分布，大社区（关联多）占更外圈、更显眼
     const comArr = Array.from(communities.entries()); // [root, list]
-    const comMap = new Map();
-    for (const [root, list] of comArr) comMap.set(root, list); // 用 root 作 key，与 find(s) 一致
     comArr.sort((a, b) => b[1].length - a[1].length); // 大社区排前
     comArr.forEach(([root, list], ci) => {
       const n = comArr.length;
@@ -3120,36 +3372,64 @@ class WorkbenchView extends ItemView {
       const c0 = find(s); // root 上存着社区中心 cx/cy/cz
       s.x = c0.cx + s._ox; s.y = c0.cy + s._oy; s.z = c0.cz + s._oz;
     }
-    // 力导向微调：把互为链接的笔记往彼此拉（最多 40 步，无动画，仅算一次布局）
-    for (let it = 0; it < 40; it++) {
+    // 力导向微调：边缘拉力 + 社区内排斥力 + 弹簧拉向中心（60 步，无动画，仅算一次布局）
+    const ITERS = 60;
+    for (let it = 0; it < ITERS; it++) {
       const F = new Map();
       for (const s of allStars) if (!F.has(s)) F.set(s, [0, 0, 0]);
-      const step = 0.10 * (1 - it / 40);
+      const step = 0.18 * (1 - it / ITERS);
+      // 边缘拉力：连接的星互拉，形成可见的线/臂
       for (const e of edges) {
         const fx = e.to.x - e.from.x, fy = e.to.y - e.from.y, fz = e.to.z - e.from.z;
         const dist = Math.sqrt(fx * fx + fy * fy + fz * fz) || 1;
-        const pull = Math.min(0.5, dist / 60) * step;
+        const pull = Math.min(0.55, dist / 95) * step;
         const ax = fx / dist * pull, ay = fy / dist * pull, az = fz / dist * pull;
         const fa = F.get(e.from), fb = F.get(e.to);
         fa[0] += ax; fa[1] += ay; fa[2] += az;
         fb[0] -= ax; fb[1] -= ay; fb[2] -= az;
       }
-      // 弹簧回复力：别被拉离社区中心太远（保持团块结构）
-      for (const s of allStars) {
-        const c0 = find(s); // root 上存着社区中心 cx/cy/cz
-        const fx = (c0.cx + s._ox) - s.x, fy = (c0.cy + s._oy) - s.y, fz = (c0.cz + s._oz) - s.z;
-        const f = F.get(s);
-        f[0] += fx * 0.02; f[1] += fy * 0.02; f[2] += fz * 0.02;
+      // 社区内排斥力：同社区的星互斥，形成松散云团而非挤一点
+      for (const [, list] of comArr) {
+        for (let i = 0; i < list.length; i++) {
+          for (let j = i + 1; j < list.length; j++) {
+            const a = list[i], b = list[j];
+            const fx = a.x - b.x, fy = a.y - b.y, fz = a.z - b.z;
+            const dist = Math.sqrt(fx * fx + fy * fy + fz * fz) || 1;
+            const repel = Math.min(0.8, 45 / dist) * step;
+            const fa = F.get(a), fb = F.get(b);
+            fa[0] += fx / dist * repel; fa[1] += fy / dist * repel; fa[2] += fz / dist * repel;
+            fb[0] -= fx / dist * repel; fb[1] -= fy / dist * repel; fb[2] -= fz / dist * repel;
+          }
+        }
       }
+      // 跨社区相连的星对也保持间距，避免两个社区挤成一坨
+      for (const e of edges) {
+        if (find(e.from) === find(e.to)) continue;
+        const fx = e.from.x - e.to.x, fy = e.from.y - e.to.y, fz = e.from.z - e.to.z;
+        const dist = Math.sqrt(fx * fx + fy * fy + fz * fz) || 1;
+        if (dist >= 60) continue;
+        const repel = Math.min(0.6, (60 - dist) / 60) * step;
+        const fa = F.get(e.from), fb = F.get(e.to);
+        fa[0] += fx / dist * repel; fa[1] += fy / dist * repel; fa[2] += fz / dist * repel;
+        fb[0] -= fx / dist * repel; fb[1] -= fy / dist * repel; fb[2] -= fz / dist * repel;
+      }
+      // 弹簧回复力：拉向社区中心（乘步长与其他力量纲一致），保持团块又不挤死
+      for (const s of allStars) {
+        const c0 = find(s);
+        const fx = c0.cx - s.x, fy = c0.cy - s.y, fz = c0.cz - s.z;
+        const f = F.get(s);
+        f[0] += fx * 0.015 * step; f[1] += fy * 0.015 * step; f[2] += fz * 0.015 * step;
+      }
+      // 应用位移（cap 放大到 1.5，让力导向真正起作用）
       for (const s of allStars) {
         const f = F.get(s);
         const m = Math.sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
-        if (m > 0.001) { const cap = Math.min(1, m); s.x += f[0] / m * cap; s.y += f[1] / m * cap; s.z += f[2] / m * cap; }
+        if (m > 0.001) { const cap = Math.min(1.5, m); s.x += f[0] / m * cap; s.y += f[1] / m * cap; s.z += f[2] / m * cap; }
       }
     }
     // 环境背景星场（远处装饰星，不交互，仅营造深空感）
     const ambient = [];
-    const ambCount = theme === "a" ? 350 : 160;
+    const ambCount = theme === "a" ? 400 : 160;
     for (let i = 0; i < ambCount; i++) {
       const phi = Math.acos(1 - 2 * hash("amb" + i, "phi"));
       const theta = hash("amb" + i, "th") * Math.PI * 2;
@@ -3175,6 +3455,8 @@ class WorkbenchView extends ItemView {
     let yaw = 0.4, pitch = -0.2, vyaw = 0, vpitch = 0, zoom = 1.0, t = 0;
     let dragging = false, dragMoved = false, lastX = 0, lastY = 0;
     let hover = null, idle = 0;
+    let selected = null, neighborSet = new Set();
+    function setSelected(s) { selected = s; neighborSet = new Set(); if (!s) return; for (const lk of edges) { if (lk.from === s) neighborSet.add(lk.to); if (lk.to === s) neighborSet.add(lk.from); } }
     const FOV = 520;
     function project(x, y, z) {
       const cy_ = Math.cos(yaw), sy_ = Math.sin(yaw);
@@ -3225,14 +3507,21 @@ class WorkbenchView extends ItemView {
       // 投影笔记星
       const proj = new Map();
       for (const s of allStars) proj.set(s, project(s.x, s.y, s.z));
-      // wikilink 关联连线（社区内部 + 跨社区；线条随深度淡出，连得近的更清晰）
+      // wikilink 关联连线（选中时高亮关联，其余淡出）
       ctx.lineWidth = 1.0;
       for (const lk of edges) {
         const pa = proj.get(lk.from), pb = proj.get(lk.to);
         if (!pa || !pb) continue;
-        const a = Math.max(0.05, 0.4 - (pa.depth + pb.depth) / 1500);
+        let a = Math.max(0.05, 0.4 - (pa.depth + pb.depth) / 1500);
+        let glow = false;
+        if (selected) {
+          if (lk.from === selected || lk.to === selected) { a = Math.max(a, 0.55); glow = true; }
+          else a = 0.03;
+        }
+        if (glow) { ctx.shadowBlur = 6; ctx.shadowColor = lk.from.color; }
         ctx.strokeStyle = lk.from.color + aHex(a);
         ctx.beginPath(); ctx.moveTo(pa.sx, pa.sy); ctx.lineTo(pb.sx, pb.sy); ctx.stroke();
+        if (glow) { ctx.shadowBlur = 0; ctx.shadowColor = "transparent"; }
       }
       ctx.globalAlpha = 1;
       // 笔记星（远→近排序，用预渲染精灵）
@@ -3242,25 +3531,48 @@ class WorkbenchView extends ItemView {
       for (const { s, p } of drawn) {
         const fog = Math.max(0.12, Math.min(1, 1 - p.depth / 480));
         const twk = 0.82 + 0.18 * Math.sin(t * 2 + s.phase);
-        const opacity = fog * (0.35 + 0.65 * s.recency) * twk;
-        const baseR = Math.max(1.5, (1.8 + s.recency * 5) * p.scale);
+        const dimmed = selected && s !== selected && !neighborSet.has(s);
+        const opFloor = theme === "a" ? 0.35 : 0.5;
+        const opacity = (dimmed ? 0.13 : 1) * fog * (opFloor + (1 - opFloor) * s.recency) * twk;
+        const baseR = Math.max(1.9, (2.5 + s.recency * 6.5) * p.scale);
         const useSpike = p.scale > 0.55 && s.recency > 0.2;
         ctx.globalAlpha = opacity;
-        ctx.drawImage(useSpike ? spikeSprites[s.coli] : sprites[s.coli], p.sx - baseR, p.sy - baseR, baseR * 2, baseR * 2);
-        if (p.scale > 0.5) {
+        if (theme === "a") {
+          ctx.drawImage(useSpike ? spikeSprites[s.coli] : sprites[s.coli], p.sx - baseR, p.sy - baseR, baseR * 2, baseR * 2);
+        } else {
+          // B/C：矢量实心圆，边缘锐利（渐变精灵在小尺寸下必糊）
+          ctx.fillStyle = s.color;
+          ctx.beginPath();
+          ctx.arc(p.sx, p.sy, Math.max(1.3, (1.05 + s.recency * 2.0) * p.scale), 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (theme === "a" && p.scale > 0.5) {
           ctx.globalAlpha = Math.min(1, opacity * 1.2);
           ctx.fillStyle = "#ffffff";
           ctx.beginPath(); ctx.arc(p.sx, p.sy, Math.max(0.5, baseR * 0.16), 0, Math.PI * 2); ctx.fill();
         }
       }
-      ctx.globalAlpha = 1;
+      // 选中星高亮光环（呼吸脉冲）
+      if (selected) {
+        const p = proj.get(selected);
+        if (p) {
+          const rr = Math.max(10, 14 * p.scale) + 2 + Math.sin(t * 3) * 1.5;
+          ctx.globalAlpha = 0.9; ctx.strokeStyle = selected.color; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.arc(p.sx, p.sy, rr, 0, Math.PI * 2); ctx.stroke();
+          ctx.globalAlpha = 0.28; ctx.lineWidth = 4;
+          ctx.beginPath(); ctx.arc(p.sx, p.sy, rr + 3, 0, Math.PI * 2); ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+      }
+            ctx.globalAlpha = 1;
       // 每颗笔记星的文件名标签（缩小时自动淡出，避免拥挤；悬停的星始终显示）
       ctx.font = "500 10px ui-sans-serif, system-ui, sans-serif";
       ctx.textAlign = "left";
       for (const { s, p } of drawn) {
-        const near = p.scale > 0.85 || s === hover;
+        const linked = selected && (s === selected || neighborSet.has(s));
+        const near = s === hover || linked;
         const fog2 = Math.max(0, Math.min(1, 1 - p.depth / 420));
-        if (!near && fog2 < 0.55) continue;
+        if (!near) continue;
         const label = s.note.name + (s.note.excalidraw ? " 🎨" : "");
         ctx.globalAlpha = Math.min(1, 0.35 + fog2 * 0.6) * (s === hover ? 1 : 0.85);
         ctx.fillStyle = PAL.text;
@@ -3335,12 +3647,13 @@ class WorkbenchView extends ItemView {
       if (dragging && !dragMoved) {
         const rect = canvas.getBoundingClientRect();
         const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
-        if (hit) this.openNote(hit.note.path);
+        setSelected(hit === selected ? null : hit);
       }
       dragging = false;
       canvas.style.cursor = hover ? "pointer" : "grab";
     };
     const onLeave = () => { if (!dragging) { hover = null; canvas.style.cursor = "grab"; } };
+    const onDbl = (e) => { const rect = canvas.getBoundingClientRect(); const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top); if (hit) this.openNote(hit.note.path); };
     const onWheel = (e) => { e.preventDefault(); zoom *= e.deltaY > 0 ? 0.92 : 1.08; zoom = Math.max(0.3, Math.min(3.5, zoom)); };
     canvas.style.cursor = "grab";
     canvas.addEventListener("mousedown", onDown);
@@ -3348,6 +3661,7 @@ class WorkbenchView extends ItemView {
     window.addEventListener("mouseup", onUp);
     canvas.addEventListener("mouseleave", onLeave);
     canvas.addEventListener("wheel", onWheel, { passive: false });
+    canvas.addEventListener("dblclick", onDbl);
     let running = true, rafId = 0;
     const loop = () => {
       if (!running) return;
@@ -3379,6 +3693,7 @@ class WorkbenchView extends ItemView {
       window.removeEventListener("mouseup", onUp);
       canvas.removeEventListener("mouseleave", onLeave);
       canvas.removeEventListener("wheel", onWheel);
+      canvas.removeEventListener("dblclick", onDbl);
       document.removeEventListener("visibilitychange", onVis);
     };
   }
@@ -3454,7 +3769,7 @@ class WorkbenchView extends ItemView {
         window.removeEventListener("mouseup", mu);
         this.plugin.areaH = this.plugin.areaH || {};
         this.plugin.areaH[id] = Math.round(sc.getBoundingClientRect().height);
-        this.plugin.saveData({ theme: this.plugin.theme, areaH: this.plugin.areaH });
+        this.plugin.saveInspoData();
       };
       window.addEventListener("mousemove", mm);
       window.addEventListener("mouseup", mu);
@@ -3462,7 +3777,7 @@ class WorkbenchView extends ItemView {
     h.addEventListener("dblclick", () => {
       if (this.plugin.areaH) delete this.plugin.areaH[id];
       sc.style.height = "";
-      this.plugin.saveData({ theme: this.plugin.theme, areaH: this.plugin.areaH });
+      this.plugin.saveInspoData();
     });
   }
   pickDate(anchorEl, t) {
@@ -3600,6 +3915,12 @@ class WorkbenchSettingTab extends PluginSettingTab {
       });
     });
     // ===== 番茄钟 =====
+    new Setting(c).setName("归档目录").setDesc("「一键归档」将完成的日记/周记移到此目录下的 每日/每周 子目录").addText((t) => {
+      t.setPlaceholder("笔记归档").setValue(this.plugin.archiveDir || "笔记归档").onChange(async (v) => {
+        this.plugin.archiveDir = v.trim() || "笔记归档";
+        this.plugin.saveInspoData();
+      });
+    });
     new Setting(c).setName("番茄钟").setHeading();
     const p = this.plugin.pomo = this.plugin.pomo || { work: 25, rest: 5, mode: "work", left: 25 * 60, running: false };
     new Setting(c).setName("专注时长（分钟）").setDesc("默认 25，范围 1–120").addText((t) => {
@@ -3618,23 +3939,46 @@ class WorkbenchSettingTab extends PluginSettingTab {
         this.plugin.saveInspoData();
       });
     });
-    // ===== 倒计时 =====
+    // ===== 倒计时 =====（区块化：添加/删除只重建本区块，不动整页滚动）
     new Setting(c).setName("倒计时").setHeading();
-    new Setting(c).setName("事件名称").setDesc("倒计时卡片显示的标题（如「国庆」「年终总结」），留空则显示「倒计时」").addText((t) => {
-      t.setPlaceholder("例：国庆").setValue(this.plugin.countdownLabel || "").onChange(async (v) => {
-        this.plugin.countdownLabel = v.trim();
-        this.plugin.saveInspoData();
-        this.plugin.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); });
+    c.createEl("p", { text: "首页倒计时卡片支持多个目标（多条时用紧凑列表显示）。单条时显示大数字卡片；留空列表则显示「距明年 1 月 1 日」。", cls: "setting-item-desc" });
+    const cdBox = c.createDiv();
+    const renderCdRows = () => {
+      cdBox.empty();
+      const cdList = this.plugin.countdowns = this.plugin.countdowns || [];
+      cdList.forEach((cd, i) => {
+        new Setting(cdBox).setName("倒计时 " + (i + 1)).addText((t) => {
+          t.setPlaceholder("事件名称（如：国庆）").setValue(cd.label || "").onChange(async (v) => {
+            cd.label = v.trim();
+            clearTimeout(this._cdDebounce); this._cdDebounce = setTimeout(() => this.plugin.saveInspoData(), 800);
+            this.plugin.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); });
+          });
+        }).addText((t) => {
+          t.setPlaceholder("2027-06-01").setValue(cd.date || "").onChange(async (v) => {
+            const s = v.trim();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(s)) cd.date = s;
+            clearTimeout(this._cdDebounce); this._cdDebounce = setTimeout(() => this.plugin.saveInspoData(), 800);
+            this.plugin.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); });
+          });
+        }).addExtraButton((b) => {
+          b.setIcon("trash").setTooltip("删除这条倒计时").onClick(async () => {
+            cdList.splice(i, 1);
+            this.plugin.saveInspoData();
+            this.plugin.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); });
+            renderCdRows();
+          });
+        });
       });
-    });
-    new Setting(c).setName("目标日期").setDesc("首页倒计时卡片的目标（留空 = 明年 1 月 1 日），格式 YYYY-MM-DD").addText((t) => {
-      t.setPlaceholder("例：2027-06-01").setValue(this.plugin.countdownTarget || "").onChange(async (v) => {
-        const s = v.trim();
-        this.plugin.countdownTarget = /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
-        this.plugin.saveInspoData();
-        this.plugin.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.render(); });
+      new Setting(cdBox).setName("添加倒计时").setDesc("新增一个倒计时目标").addButton((b) => {
+        b.setButtonText("+ 添加").setCta().onClick(async () => {
+          cdList.push({ label: "", date: lib.todayStr(), since: lib.todayStr() });
+          this.plugin.saveInspoData();
+          renderCdRows();
+          const last = cdBox.lastElementChild; if (last && last.scrollIntoView) last.scrollIntoView({ block: "nearest" });
+        });
       });
-    });
+    };
+    renderCdRows();
     // ===== 项目阶段配置 =====
     new Setting(c).setName("项目阶段").setHeading();
     c.createEl("p", { text: "新建项目看板使用的阶段（4–6 个）。任务打 #阶段名 标签即落入对应列；「已完成」列收集已勾选任务。已建项目沿用其自身阶段，不受此处影响。", cls: "setting-item-desc" });
