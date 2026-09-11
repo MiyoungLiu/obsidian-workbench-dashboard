@@ -2789,16 +2789,21 @@ class WorkbenchView extends ItemView {
       const list = card.createDiv({ cls: "wb-cd-list" });
       // 每条进度 = 从设定日(since)到目标日走过多少%；旧数据无 since 按一年窗口估算
       const th = this.plugin.theme || "a";
-      const CD_PAL = { a: [["#2f6bff","#c026d3"],["#0ea5e9","#22d3ee"],["#f59e0b","#f7768e"],["#10b981","#73daca"],["#bb9af7","#7dcfff"]], b: [["#b06a3a","#d4a96a"],["#9c3554","#c8954e"],["#4a7c59","#b06a3a"],["#8b5a2b","#a3b18a"],["#7d5536","#e0af68"]], c: [["#ff5c8a","#f472b6"],["#2dd4bf","#34d399"],["#fbbf24","#fb923c"],["#a78bfa","#60a5fa"],["#f472b6","#a78bfa"]] };
+      const CD_PAL = { a: [["#2f6bff","#c026d3"],["#14b8a6","#a3e635"],["#f59e0b","#ef4444"],["#8b5cf6","#ec4899"],["#22c55e","#06b6d4"]], b: [["#c2410c","#f59e0b"],["#a61e4d","#e64980"],["#0c8599","#66d9e8"],["#2b8a3e","#94d82d"],["#5f3dc4","#9775fa"]], c: [["#ff2d6f","#ffc400"],["#00c8a8","#a3e635"],["#2979ff","#00e5ff"],["#7c4dff","#ff4dd2"],["#ff6d00","#ffd000"]] };
       const psets = CD_PAL[th] || CD_PAL.a;
       items.forEach((it, idx) => {
         const st = lib.countdownStats(it.date);
         const today = st.daysLeft === 0;
         const isPast = it.date < lib.todayStr();
-        // 迷你条 = 一年刻度剩余量：条长 = 剩余天数/365，不同目标长短立现，每天同步 drain
+        // 迷你条：窗口 = 今年1/1 → 目标日；彩色 = 今年已流逝，灰底 = 距目标剩余
         let pct;
-        if (isPast || today) pct = 0;
-        else pct = Math.max(0, Math.min(100, Math.round((st.daysLeft / 365) * 100)));
+        if (isPast || today) pct = 100;
+        else {
+          const base = new Date().getFullYear() + "-01-01";
+          const whole = this.daysBetween(base, it.date);
+          const gone = this.daysBetween(base, lib.todayStr());
+          pct = whole > 0 ? Math.max(0, Math.min(100, Math.round((gone / whole) * 100))) : 100;
+        }
         const row = list.createDiv({ cls: "wb-cd-item" + (today ? " today" : "") + (isPast ? " past" : "") });
         const nm = row.createDiv({ cls: "wb-cd-nm" });
         nm.createSpan({ text: it.label || it.date });
@@ -2808,7 +2813,7 @@ class WorkbenchView extends ItemView {
         else if (isPast) num.createSpan({ text: "已过 " + this.daysBetween(it.date, lib.todayStr()) + " 天", cls: "wb-cd-pastnum" });
         else num.createSpan({ text: String(st.daysLeft), cls: "wb-cd-mininum" });
         if (!today && !isPast) num.createSpan({ text: "天", cls: "wb-cd-unit" });
-        const pctNote = (today || isPast ? "" : "剩 " + st.daysLeft + " 天 · 一年刻度 " + pct + "%" + (st.daysLeft > 365 ? "（超一年，满条）" : ""));
+        const pctNote = (today || isPast ? (today ? "就是今天" : "已过期") : "今年已过 " + pct + "% · 距目标还剩 " + st.daysLeft + " 天");
         const mini = row.createDiv({ cls: "wb-cd-mini", attr: { title: pctNote } });
         const mf = mini.createSpan({ cls: "wb-cd-minifill" });
         mf.style.width = pct + "%";
