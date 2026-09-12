@@ -415,20 +415,19 @@ function setTaskText(text, ref, desc, tags, due) {
   if (i < 0) return { ok: false, error: "stale" };
   const m3 = lines[i].match(/^(\s*[-*]\s+\[[ xX]\]\s+)(.*)$/);
   if (!m3) return { ok: false, error: "not-task" };
-  let rest = m3[2]
-    .replace(/\s*#[^\s#]+/g, "")
-    .replace(/([📅✅⏳])\s*\d{4}-\d{2}-\d{2}/gu, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  // 保留原行基础前缀(缩进+bullet+checkbox+空格)，只重建 desc/标签/日期，避免重复拼出 "[-] [-]"
   const tagsArr = Array.isArray(tags) ? tags : [];
-  if (rest) {
-    let newLine = "- " + (lines[i].match(/^\s*[-*]\s+\[[xX]\]/) ? "[x]" : "[ ]") + " " + desc;
-    if (tagsArr.length) newLine += " " + tagsArr.map((x) => "#" + x).join(" ");
-    if ((lines[i].match(/✅\s*\d{4}-\d{2}-\d{2}/) || [])[0]) newLine += " " + lines[i].match(/✅\s*\d{4}-\d{2}-\d{2}/)[0];
-    if (due) newLine += " 📅 " + due;
-    lines[i] = m3[1] + newLine;
-  }
-  return { ok: true, text: rejoin(text, lines), changed: lines[i] !== ref };
+  let rest = String(desc || "").trim();
+  if (tagsArr.length) rest += " " + tagsArr.map((x) => "#" + x).join(" ");
+  const doneMark = (lines[i].match(/✅\s*\d{4}-\d{2}-\d{2}/) || [])[0];
+  if (doneMark) rest += " " + doneMark;
+  if (due) rest += " 📅 " + due;
+  rest = rest.replace(/\s+/g, " ").trim();
+  if (!rest) return { ok: true, text, changed: false };
+  const newLine = m3[1] + rest;
+  const changed = newLine !== lines[i];
+  lines[i] = newLine;
+  return { ok: true, text: rejoin(text, lines), changed };
 }
 function removeTaskLine(text, ref) {
   const lines = text.split(/\r?\n/);
@@ -1393,6 +1392,26 @@ class WorkbenchPlugin extends Plugin {
   }
   onunload() {
     this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) l.view.onClose(); });
+    this._stopPomoTimer();
+  }
+  // 番茄钟倒计时改为 plugin 级唯一 interval：多视图并存时共享同一计时器，避免各自递减同一 left 造成 1 秒走 2 秒
+  _ensurePomoTimer() {
+    if (this._pomoTimer) return;
+    const self = this;
+    this._pomoTimer = window.setInterval(() => {
+      const p = self.pomo;
+      if (!p || !p.running) return;
+      p.left -= 1;
+      let finished = null;
+      if (p.left <= 0) { p.left = 0; p.running = false; finished = p.mode; }
+      const views = [];
+      self.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view) views.push(l.view); });
+      if (finished) views.forEach((v) => { if (v.showPomoAlert) v.showPomoAlert(finished); });
+      views.forEach((v) => { if (v.updatePomoUI) v.updatePomoUI(p); });
+    }, 1000);
+  }
+  _stopPomoTimer() {
+    if (this._pomoTimer) { window.clearInterval(this._pomoTimer); this._pomoTimer = null; }
   }
   applyData(data) {
     if (!data) data = {};
@@ -1796,7 +1815,13 @@ class WorkbenchView extends ItemView {
     this.app.vault.off("create", this._bump);
     this.app.vault.off("delete", this._bump);
     window.clearInterval(this._clock);
-    this._clock = window.setInterval(() => { if (this.root) this.renderHeadTime(); }, 30000);
+    this._lastDay = lib.todayStr();
+    this._clock = window.setInterval(() => {
+      if (!this.root) return;
+      this.renderHeadTime();
+      // 跨午夜：日期变了就整页刷新，避免"今日/热力图/连续天数"停留在前一天
+      if (this._lastDay !== lib.todayStr()) { this._lastDay = lib.todayStr(); this.refresh().catch((er) => this.catchRender(er)); }
+    }, 30000);
     // 隐藏 Obsidian 视图头部（标题"工作台"+左右箭头），让背景网格顶到最上
     if (this.headerEl) { this.headerEl.style.display = "none"; }
     // 去掉 Obsidian view-content 默认内边距，让根背景铺满整个 leaf
@@ -1831,6 +1856,9 @@ class WorkbenchView extends ItemView {
     this.app.vault.off("delete", this._bump);
     window.clearInterval(this._clock);
     if (this._pomoTick) { clearInterval(this._pomoTick); this._pomoTick = null; }
+    // 番茄钟计时器由 plugin 级单例持有：仅当没有其它工作台视图时停止，防止多视图的递减被打断
+    const otherViews = this.app.workspace.getLeavesOfType(VIEW_TYPE).some((l) => l.view && l.view !== this);
+    if (!otherViews) this.plugin._stopPomoTimer();
     this.root = null;
     this.pad = null;
   }
@@ -3267,19 +3295,8 @@ class WorkbenchView extends ItemView {
     inc.addEventListener("click", () => { p[key] = Math.min(max, p[key] + 1); if (!p.running && p.mode === key) p.left = p[key] * 60; this.reevalPomo(); this.root.querySelectorAll(".wb-pomo-nv")[key === "work" ? 0 : 1].textContent = String(p[key]); });
   }
   ensurePomoTick() {
-    if (this._pomoTick) return;
-    this._pomoTick = setInterval(() => {
-      const p = this.plugin.pomo;
-      if (!p || !p.running || !this.root) return;
-      p.left -= 1;
-      if (p.left <= 0) {
-        p.running = false; p.left = 0;
-        const finished = p.mode;
-        this.showPomoAlert(finished);
-      }
-      const t = this.root.querySelector("#wb-pomo-time .wb-pomo-mmss");
-      if (t) t.textContent = this.pomoText(Math.max(0, p.left));
-    }, 1000);
+    // 倒计时 interval 由 plugin 级单例维护（_ensurePomoTimer），多视图共享，避免并发递减漂移
+    this.plugin._ensurePomoTimer();
   }
   savePomo() { this.pomo(); this.plugin.saveInspoData(); }
   showPomoAlert(finishedMode) {
@@ -4228,15 +4245,18 @@ class WorkbenchView extends ItemView {
     if (this._picker) { this._picker.remove(); this._picker = null; }
   }
   async apply(file, mutate) {
-    try {
+    // 同一文件的异步 read→write 按文件串行排队，避免并发基于旧文本覆盖
+    const q = this.plugin._applyQueue = (this.plugin._applyQueue || {});
+    const prev = q[file] || Promise.resolve();
+    const run = prev.then(async () => {
       const f = this.app.vault.getAbstractFileByPath(file);
       if (!f) { this.banner("未找到文件：" + file); return; }
       const res = mutate(await this.app.vault.read(f));
       if (!res.ok) { this.banner("内容已变化（他处编辑过），点击这里重载"); return; }
       if (res.changed) await this.app.vault.process(f, () => res.text);
-    } catch (er) {
-      this.banner("写入失败：" + String((er && er.message) || er));
-    }
+    }).catch((er) => { this.banner("写入失败：" + String((er && er.message) || er)); });
+    q[file] = run;
+    await run;
   }
   banner(msg) {
     if (!this.pad) return;
