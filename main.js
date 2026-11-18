@@ -962,7 +962,13 @@ const CSS = `
 .wb-cdue{ font-size:10px; color:var(--muted); }
 .wb-wall{ width:100%; }
 .wb-wgroup{ margin-bottom:10px; }
-.wb-wlabel{ font-size:11px; font-weight:700; color:var(--accent); margin-bottom:6px; position:sticky; top:0; background:var(--bg); z-index:1; }
+.wb-wlabel{ font-size:11px; font-weight:700; color:var(--accent); margin-bottom:6px; position:sticky; top:0; background:var(--bg); z-index:1; display:flex; align-items:center; gap:8px; }
+.wb-wpage{ margin-left:auto; display:flex; align-items:center; gap:2px; font-weight:400; }
+.wb-wpage-btn{ cursor:pointer; padding:2px 10px; border-radius:6px; color:var(--text); font-size:14px; font-weight:700; line-height:1.2; user-select:none; background:var(--panel); border:1px solid var(--border); }
+.wb-wpage-btn:hover{ background:var(--panel2); color:var(--accent); border-color:color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.wb-wpage-btn.off{ opacity:.35; cursor:default; }
+.wb-wpage-btn.off:hover{ background:var(--panel); color:var(--text); border-color:var(--border); }
+.wb-wpage-num{ font-size:12px; color:var(--muted); padding:0 6px; font-variant-numeric:tabular-nums; }
 .wb-wcards{ display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:12px; }
 .wb-wcard{ background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:11px 13px; box-shadow:var(--shadow); cursor:pointer; }
 .wb-wcard:hover{ border-color:color-mix(in srgb, var(--accent) 45%, var(--border)); transform:translateY(-1px); }
@@ -2456,10 +2462,13 @@ class WorkbenchView extends ItemView {
     const now = new Date();
     const p = kind === "weekly" ? (this.plugin.weeklyDir + "/" + lib.isoYearWeek(now) + ".md") : (this.plugin.dailyDir + "/" + lib.dateStr(now) + ".md");
     if (this.app.vault.getAbstractFileByPath(p)) { this.openNote(p); return; }
-    // 不存在：优先交给 Periodic Notes 按模板创建；若未安装该插件，则自建一个基础日记文件（不依赖外部插件）
+    // 不存在：优先交给 Periodic Notes 创建；周记用 ISO 周口径（周一=本周），PN 的 moment 周算法（周日=本周）会把它归到上一周，
+    // 且 PN 会打开已存在的旧周文件而不创建本周，因此周记直接走本插件的 fallback（会读取 _templates/周笔记.md 渲染正确的本周起止）。
     const pnIds = kind === "weekly" ? ["periodic-notes:open-weekly-note", "open-weekly-note"] : ["periodic-notes:open-daily-note", "open-daily-note"];
     const cmds = this.app.commands.commands;
-    if (pnIds.some((id) => cmds[id])) {
+    if (kind === "weekly") {
+      this.createPeriodicNoteFallback(kind, p);
+    } else if (pnIds.some((id) => cmds[id])) {
       this.execCmd(pnIds);
     } else {
       this.createPeriodicNoteFallback(kind, p);
@@ -2471,14 +2480,20 @@ class WorkbenchView extends ItemView {
     m.setTitle("一键归档");
     m.onOpen = () => {
       const c2 = m.contentEl;
-      c2.createEl("style", { text: ".wb-mml{font-size:12px;color:var(--text-muted);margin-top:10px;margin-bottom:10px;}.wb-mmb{margin-top:14px;display:flex;justify-content:flex-end;gap:8px;}.wb-arc-tabs{display:flex;gap:6px;margin-bottom:10px;}.wb-arc-tab{flex:1;padding:8px 12px;border:1px solid var(--background-modifier-border);border-radius:8px;background:var(--background-primary);color:var(--text-normal);font-size:13px;cursor:pointer;text-align:center;transition:border-color .12s,background .12s;}.wb-arc-tab.active{border-color:var(--interactive-accent);background:var(--interactive-accent);color:#fff;font-weight:600;}.wb-arc-list{max-height:220px;overflow-y:auto;border:1px solid var(--background-modifier-border);border-radius:8px;margin-bottom:10px;padding:4px;}.wb-arc-file{padding:6px 10px;border-radius:6px;font-size:12px;color:var(--text-normal);cursor:pointer;font-variant-numeric:tabular-nums;}.wb-arc-file:hover{background:var(--background-modifier-hover);}.wb-arc-file.sel{background:var(--interactive-accent);color:#fff;}.wb-arc-preview{padding:10px 12px;border:1px solid var(--background-modifier-border);border-radius:8px;background:var(--background-secondary);font-size:11px;line-height:1.6;margin-bottom:4px;}.wb-arc-src{color:var(--text-normal);}.wb-arc-dst{color:var(--text-muted);}.wb-arc-miss{color:var(--text-error);font-weight:600;}" });
+      c2.createEl("style", { text: ".wb-mml{font-size:12px;color:var(--text-muted);margin-top:10px;margin-bottom:10px;}.wb-mmb{margin-top:14px;display:flex;justify-content:flex-end;gap:8px;}.wb-arc-tabs{display:flex;gap:6px;margin-bottom:10px;}.wb-arc-tab{flex:1;padding:8px 12px;border:1px solid var(--background-modifier-border);border-radius:8px;background:var(--background-primary);color:var(--text-normal);font-size:13px;cursor:pointer;text-align:center;transition:border-color .12s,background .12s;}.wb-arc-tab.active{border-color:var(--interactive-accent);background:var(--interactive-accent);color:#fff;font-weight:600;}.wb-arc-list{max-height:220px;overflow-y:auto;border:1px solid var(--background-modifier-border);border-radius:8px;margin-bottom:10px;padding:4px;}.wb-arc-file{padding:6px 10px;border-radius:6px;font-size:12px;color:var(--text-normal);cursor:pointer;font-variant-numeric:tabular-nums;}.wb-arc-file:hover{background:var(--background-modifier-hover);}.wb-arc-file.sel{background:var(--interactive-accent);color:#fff;}.wb-arc-preview{padding:10px 12px;border:1px solid var(--background-modifier-border);border-radius:8px;background:var(--background-secondary);font-size:11px;line-height:1.6;margin-bottom:4px;}.wb-arc-src{color:var(--text-normal);}.wb-arc-dst{color:var(--text-muted);}.wb-arc-miss{color:var(--text-error);font-weight:600;}.wb-arc-ops{display:flex;align-items:center;gap:6px;margin-bottom:6px;}.wb-arc-cnt{font-size:11px;color:var(--text-muted);margin-right:auto;}.wb-arc-all{padding:3px 10px;border:1px solid var(--background-modifier-border);border-radius:6px;background:var(--background-secondary);color:var(--text-normal);font-size:11px;cursor:pointer;}.wb-arc-all:hover{border-color:var(--interactive-accent);}" });
       const arcDir = this.plugin.archiveDir || "笔记归档";
-      c2.createDiv({ text: "从下面列表选择要归档的笔记（移到「" + arcDir + "」，自动修复链接）", cls: "wb-mml" });
+      c2.createDiv({ text: "从下面列表选择要归档的笔记（可多选，移到「" + arcDir + "」，自动修复链接）", cls: "wb-mml" });
       let kind = "daily";
-      let pick = null;
+      const picks = new Set(); // 已选文件名（不含 .md），多选
+      let curNames = []; // 当前列表的全部文件名，供全选用
+      let opsBar = null, selInfo = null, allBtn = null, noneBtn = null;
       const tabs = c2.createDiv({ cls: "wb-arc-tabs" });
       const tabD = tabs.createEl("button", { cls: "wb-arc-tab active", text: "📅 日记", attr: { type: "button" } });
       const tabW = tabs.createEl("button", { cls: "wb-arc-tab", text: "▤ 周记", attr: { type: "button" } });
+      opsBar = c2.createDiv({ cls: "wb-arc-ops" });
+      selInfo = opsBar.createSpan({ cls: "wb-arc-cnt", text: "已选 0 篇" });
+      allBtn = opsBar.createEl("button", { cls: "wb-arc-all", text: "全选", attr: { type: "button" } });
+      noneBtn = opsBar.createEl("button", { cls: "wb-arc-all", text: "清空选择", attr: { type: "button" } });
       const listBox = c2.createDiv({ cls: "wb-arc-list" });
       const preview = c2.createDiv({ cls: "wb-arc-preview" });
       const srcLine = preview.createDiv({ cls: "wb-arc-src" });
@@ -2490,18 +2505,25 @@ class WorkbenchView extends ItemView {
       const updatePreview = () => {
         const srcDir = kind === "weekly" ? this.plugin.weeklyDir : this.plugin.dailyDir;
         const subDir = kind === "weekly" ? "每周" : "每日";
-        if (!pick) {
-          srcLine.setText("源：（先从上面列表选择一篇）");
+        if (selInfo) selInfo.setText("已选 " + picks.size + " 篇");
+        if (!picks.size) {
+          srcLine.setText("源：（先从上面列表选择，可多选）");
           dstLine.setText("→ " + arcDir + "/" + subDir + "/");
           archiveBtn.disabled = true;
           return;
         }
-        srcLine.setText("源：" + srcDir + "/" + pick + ".md");
-        dstLine.setText("→ " + arcDir + "/" + subDir + "/" + pick + ".md");
+        if (picks.size === 1) {
+          const only = Array.from(picks)[0];
+          srcLine.setText("源：" + srcDir + "/" + only + ".md");
+          dstLine.setText("→ " + arcDir + "/" + subDir + "/" + only + ".md");
+        } else {
+          srcLine.setText("已选 " + picks.size + " 篇（来自 " + srcDir + "/）");
+          dstLine.setText("→ " + arcDir + "/" + subDir + "/（逐一移动，目标已存在的自动跳过）");
+        }
         archiveBtn.disabled = false;
       };
       const loadList = () => {
-        pick = null;
+        picks.clear();
         listBox.empty();
         const srcDir = kind === "weekly" ? this.plugin.weeklyDir : this.plugin.dailyDir;
         const folder = app.vault.getAbstractFileByPath(srcDir);
@@ -2512,27 +2534,47 @@ class WorkbenchView extends ItemView {
           listBox.createDiv({ text: "（" + srcDir + " 下没有笔记）", cls: "wb-arc-miss" });
         }
         const show = files.slice(0, 50);
+        curNames = show.map((f) => f.name.replace(/.md$/, ""));
         for (const f of show) {
-          const item = listBox.createDiv({ cls: "wb-arc-file", text: f.name.replace(/.md$/, "") });
+          const name = f.name.replace(/.md$/, "");
+          const item = listBox.createDiv({ cls: "wb-arc-file", text: name });
           item.addEventListener("click", () => {
-            listBox.querySelectorAll(".wb-arc-file").forEach((el) => el.removeClass("sel"));
-            item.addClass("sel");
-            pick = f.name.replace(/.md$/, "");
+            if (picks.has(name)) { picks.delete(name); item.removeClass("sel"); }
+            else { picks.add(name); item.addClass("sel"); }
             updatePreview();
           });
         }
         updatePreview();
       };
+      allBtn.addEventListener("click", () => { curNames.forEach((n) => picks.add(n)); listBox.querySelectorAll(".wb-arc-file").forEach((el) => el.addClass("sel")); updatePreview(); });
+      noneBtn.addEventListener("click", () => { picks.clear(); listBox.querySelectorAll(".wb-arc-file").forEach((el) => el.removeClass("sel")); updatePreview(); });
       tabD.addEventListener("click", () => { kind = "daily"; tabD.addClass("active"); tabW.removeClass("active"); loadList(); });
       tabW.addEventListener("click", () => { kind = "weekly"; tabW.addClass("active"); tabD.removeClass("active"); loadList(); });
-      archiveBtn.addEventListener("click", () => { m.close(); this.archiveCurrentNote(kind, pick); });
+      archiveBtn.addEventListener("click", async () => {
+        if (!picks.size) return;
+        m.close();
+        const names = Array.from(picks);
+        if (names.length === 1) { this.archiveCurrentNote(kind, names[0]); return; }
+        let ok = 0, skip = 0, fail = 0;
+        for (const name of names) {
+          const r = await this.archiveCurrentNote(kind, name, { silent: true });
+          if (r === "ok") ok++; else if (r === "skip") skip++; else fail++;
+        }
+        const parts = ["已归档 " + ok + " 篇"];
+        if (skip) parts.push("跳过（目标已存在）" + skip + " 篇");
+        if (fail) parts.push("失败 " + fail + " 篇");
+        new Notice(parts.join("，"));
+        if (ok) this.refresh().catch(() => {});
+      });
       loadList();
     };
     themeModal(m, this.plugin.theme);
     m.open();
   }
-  async archiveCurrentNote(kind, fname) {
+  // opts.silent：批量归档时逐篇静默调用（不弹 Notice、不逐次 refresh），返回 "ok"|"skip"|"fail"|"miss"
+  async archiveCurrentNote(kind, fname, opts) {
     const app = this.app;
+    const silent = !!(opts && opts.silent);
     // fname = 文件名（不含 .md）；缺省回退到今天/本周
     const name = fname || (kind === "weekly" ? lib.isoYearWeek(new Date()) : lib.todayStr());
     const srcDir = kind === "weekly" ? this.plugin.weeklyDir : this.plugin.dailyDir;
@@ -2541,8 +2583,14 @@ class WorkbenchView extends ItemView {
     const dstDir = this.plugin.archiveDir + "/" + subDir;
     const dstPath = dstDir + "/" + name + ".md";
     const srcFile = app.vault.getAbstractFileByPath(srcPath);
-    if (!srcFile) { new Notice("未找到该" + (kind === "weekly" ? "周记" : "日记") + "：" + srcPath); return; }
-    if (app.vault.getAbstractFileByPath(dstPath)) { new Notice("目标已存在，未归档：" + dstPath); return; }
+    if (!srcFile) {
+      if (silent) return "miss";
+      new Notice("未找到该" + (kind === "weekly" ? "周记" : "日记") + "：" + srcPath); return;
+    }
+    if (app.vault.getAbstractFileByPath(dstPath)) {
+      if (silent) return "skip";
+      new Notice("目标已存在，未归档：" + dstPath); return;
+    }
     try {
       if (!app.vault.getAbstractFileByPath(dstDir)) {
         const mkDir = app.vault.createFolder || app.vault.createDirectory;
@@ -2555,22 +2603,46 @@ class WorkbenchView extends ItemView {
         await app.vault.create(dstPath, content);
         await app.vault.delete(srcFile);
       }
+      if (silent) return "ok";
       new Notice("已归档到 " + dstPath);
       this.refresh().catch(() => {});
     } catch (e) {
+      if (silent) return "fail";
       new Notice("归档失败：" + String((e && e.message) || e));
       console.error("[Lyra] archive error", e);
     }
   }
   async createPeriodicNoteFallback(kind, p) {
-    // 未安装 Periodic Notes 时自建基础日记/周记（不依赖外部插件）
+    // 未安装 Periodic Notes 时自建基础日记/周记（不依赖外部插件；周记 self 用 ISO 周=周一至周日渲染起止）
     const app = this.app;
     const today = lib.dateStr(new Date());
-    const week = lib.isoYearWeek(new Date());
     const isWeek = kind === "weekly";
-    const body = isWeek
-      ? "---\n周: " + week + "\n---\n\n## 本周目标\n- \n\n## 本周待办\n```tasks\nhide toolbar\nnot done\nhide task count\n```\n\n## 本周完成\n```tasks\nhide toolbar\ndone\nhide task count\n```\n\n## 回顾\n- \n"
-      : "---\n日期: " + today + "\n---\n\n## 今日待办（自动汇总）\n```tasks\nhide toolbar\nnot done\ndue before tomorrow\nhide task count\n```\n\n## 今天完成\n```tasks\nhide toolbar\ndone after yesterday\ndone before tomorrow\nhide task count\n```\n\n## 明日计划\n- \n\n## 学习与思考\n- \n";
+    let body;
+    if (isWeek) {
+      // 单一模板来源：读 _templates/周笔记.md 并替换 Templater 占位符，得到带起止属性和日期范围的内容
+      const week = lib.isoYearWeek(new Date());
+      const start = lib.weekStart(today);          // 本周周一 YYYY-MM-DD
+      const end = lib.addDays(start, 6);           // 本周周日 YYYY-MM-DD
+      let tpl = "";
+      try { const tf = app.vault.getAbstractFileByPath("_templates/周笔记.md"); if (tf) tpl = await app.vault.read(tf); } catch (e) {}
+      if (tpl) {
+        // 1) 无偏移的单参数格式（周名）
+        tpl = tpl.replace(/<% tp\.date\.now\("gggg-\[W\]ww"\) %>/g, week);
+        // 2) 带偏移/日期的格式：0=周一(start)、6=周日(end)；YYY-MM-DD 全年份、MM-DD 仅月份-日
+        tpl = tpl.replace(/<% tp\.date\.now\("(YYYY-MM-DD|MM-DD)",\s*(\d+),\s*tp\.file\.title,\s*"GGGG-\[W\]WW"\) %>/g, (_, fmt, off) => {
+          const d = Number(off) === 0 ? start : end;
+          return fmt === "YYYY-MM-DD" ? d : d.slice(5);
+        });
+        body = tpl;
+      } else {
+        // 无模板时兜底：至少带起止属性和日期范围
+        body = "---\n周: " + week + "\n起: " + start.slice(5) + "\n止: " + end.slice(5) + "\n---\n\n## 本周待办\n```tasks\nhide toolbar\nnot done\ndue on or after " + start + "\ndue on or before " + end + "\nhide task count\n```\n\n## 本周完成\n```tasks\nhide toolbar\ndone on or after " + start + "\ndone on or before " + end + "\nhide task count\n```\n\n## 回顾\n- \n";
+      }
+    } else {
+      // 每日：完成块用固定的「done on <日期>」(与 _templates/每日笔记.md 一致)。相对日期(done after yesterday)
+      // 会在跨天打开旧日报时漂移到"打开那天"的范围，导致当日完成清空。
+      body = "---\n日期: " + today + "\n---\n\n## 今日待办（自动汇总）\n```tasks\nhide toolbar\nnot done\ndue before tomorrow\nhide task count\n```\n\n## 今天完成\n```tasks\nhide toolbar\ndone on " + today + "\nhide task count\n```\n\n## 明日计划\n- \n\n## 学习与思考\n- \n";
+    }
     try {
       const dir = p.split("/").slice(0, -1).join("/");
       if (dir && !app.vault.getAbstractFileByPath(dir)) { const mkDir = app.vault.createFolder || app.vault.createDirectory; await mkDir.call(app.vault, dir); }
@@ -3444,7 +3516,11 @@ class WorkbenchView extends ItemView {
         return r;
       });
     });
-    row.createSpan({ text: t.desc, cls: "wb-desc" + (t.done ? " done" : "") });
+    const descTip = [t.desc];
+    if (t.due) descTip.push("截止 " + t.due);
+    if (t.scheduled) descTip.push("计划开始 " + t.scheduled);
+    if (t.file) descTip.push("来源 " + t.file);
+    row.createSpan({ text: t.desc, cls: "wb-desc" + (t.done ? " done" : ""), attr: { title: descTip.join("\n") } });
     for (const tag of t.tags) row.createSpan({ text: tag, cls: "wb-chip" });
     const due = row.createSpan({ cls: "wb-due" + (t.due ? "" : t.scheduled ? " sch" : " add") });
     due.textContent = t.due ? t.due.slice(5) : (t.scheduled ? "⏳ " + t.scheduled.slice(5) : "+ 设日期");
@@ -3611,19 +3687,37 @@ class WorkbenchView extends ItemView {
       b.addEventListener("click", () => this.plugin.setWallView(it.id));
     }
     if (curv === "star") { this.renderStarMap(wall); return; }
+    if (!this._wallPages) this._wallPages = {}; // folder → 页索引（0 起，内存态：切页签/刷新回到第 1 页）
+    const PER = 12; // 每组单页展示条数，超出走翻页
     const groups = lib.cardWall(this.state);
     for (const g of groups) {
       const sec = wall.createDiv({ cls: "wb-wgroup" });
-      sec.createDiv({ cls: "wb-wlabel", text: g.folder });
+      const label = sec.createDiv({ cls: "wb-wlabel" });
+      label.createSpan({ text: g.folder + " · " + g.notes.length });
+      const pager = label.createSpan({ cls: "wb-wpage" });
       const grid = sec.createDiv({ cls: "wb-wcards" });
-      for (const n of g.notes) {
-        const card = grid.createDiv({ cls: "wb-wcard" });
-        card.createSpan({ text: n.name + (n.excalidraw ? " 🎨" : ""), cls: "wb-wname" });
-        card.addEventListener("click", () => this.openNote(n.path));
-        const sub = card.createSpan({ cls: "wb-wsub" });
-        if (n.date) sub.createSpan({ text: n.date + " · " });
-        sub.createSpan({ text: relTime(n.mtime) });
-      }
+      const pages = Math.max(1, Math.ceil(g.notes.length / PER));
+      let page = Math.min(this._wallPages[g.folder] || 0, pages - 1);
+      const renderPage = () => {
+        grid.empty();
+        pager.empty();
+        for (const n of g.notes.slice(page * PER, page * PER + PER)) {
+          const card = grid.createDiv({ cls: "wb-wcard" });
+          card.createSpan({ text: n.name + (n.excalidraw ? " 🎨" : ""), cls: "wb-wname" });
+          card.addEventListener("click", () => this.openNote(n.path));
+          const sub = card.createSpan({ cls: "wb-wsub" });
+          if (n.date) sub.createSpan({ text: n.date + " · " });
+          sub.createSpan({ text: relTime(n.mtime) });
+        }
+        if (pages > 1) {
+          const prev = pager.createSpan({ text: "‹", cls: "wb-wpage-btn" + (page === 0 ? " off" : "") });
+          prev.addEventListener("click", () => { if (page > 0) { page--; this._wallPages[g.folder] = page; renderPage(); } });
+          pager.createSpan({ text: (page + 1) + "/" + pages, cls: "wb-wpage-num" });
+          const next = pager.createSpan({ text: "›", cls: "wb-wpage-btn" + (page === pages - 1 ? " off" : "") });
+          next.addEventListener("click", () => { if (page < pages - 1) { page++; this._wallPages[g.folder] = page; renderPage(); } });
+        }
+      };
+      renderPage();
       if (!g.notes.length) sec.createDiv({ cls: "wb-empty", text: "（空）" });
     }
     if (!groups.length) wall.createDiv({ cls: "wb-empty", text: "（无命中白名单的文件夹）" });
@@ -3779,14 +3873,29 @@ class WorkbenchView extends ItemView {
     // 社区中心点：斐波那契球面分布，大社区（关联多）占更外圈、更显眼
     const comArr = Array.from(communities.entries()); // [root, list]
     comArr.sort((a, b) => b[1].length - a[1].length); // 大社区排前
+    const nCom = comArr.length;
+    // 主社区 = 最大连通分量（球面第一位）。小社区（2~8 篇互链）收编为它的“伴星团”：
+    // 沿主星系外围均匀环绕一圈——散在球面外圈的老笔记社区星点又小又暗，
+    // 只剩几条放射状短边可见，远看就是几段看不懂的“破折号”
+    const mainRoot = comArr[0] && comArr[0][1].length >= 2 ? comArr[0][0] : null;
+    const orbitIdx = new Map(); // 收编社区 → 环绕序号（角度均匀分布，避免都挤在同一处）
+    if (mainRoot) comArr.forEach(([root, list]) => { if (root !== mainRoot && list.length >= 2 && list.length <= 8) orbitIdx.set(root, orbitIdx.size); });
     comArr.forEach(([root, list], ci) => {
-      const n = comArr.length;
-      const phi = Math.acos(1 - 2 * (ci + 0.5) / n);
+      const phi = Math.acos(1 - 2 * (ci + 0.5) / nCom);
       const theta = Math.PI * (1 + Math.sqrt(5)) * (ci + 0.5);
       const R = 150 + Math.min(120, ci * 22);
       root.cx = R * Math.sin(phi) * Math.cos(theta);
       root.cy = R * Math.sin(phi) * Math.sin(theta);
       root.cz = R * Math.cos(phi);
+      const oi = orbitIdx.get(root);
+      if (ci === 0 || !mainRoot || oi === undefined) return;
+      const rep = list[0].note.path; // 以社区代表星为种子，位置稳定可复现
+      const ang = (oi / orbitIdx.size) * Math.PI * 2 + (hash(rep, "gj") - 0.5) * 0.5;
+      const rr = 175 + hash(rep, "gr") * 55;
+      const dz = (hash(rep, "gz") - 0.5) * 150;
+      root.cx = mainRoot.cx + Math.cos(ang) * rr;
+      root.cy = mainRoot.cy + Math.sin(ang) * rr;
+      root.cz = mainRoot.cz + dz;
     });
     // 每颗星绑定自己的社区中心；初始位置 = 社区中心 + 组内散布偏移
     for (const s of allStars) {
@@ -3809,30 +3918,18 @@ class WorkbenchView extends ItemView {
         fa[0] += ax; fa[1] += ay; fa[2] += az;
         fb[0] -= ax; fb[1] -= ay; fb[2] -= az;
       }
-      // 社区内排斥力：同社区的星互斥，形成松散云团而非挤一点
-      for (const [, list] of comArr) {
-        for (let i = 0; i < list.length; i++) {
-          for (let j = i + 1; j < list.length; j++) {
-            const a = list[i], b = list[j];
-            const fx = a.x - b.x, fy = a.y - b.y, fz = a.z - b.z;
-            const dist = Math.sqrt(fx * fx + fy * fy + fz * fz) || 1;
-            const repel = Math.min(0.8, 45 / dist) * step;
-            const fa = F.get(a), fb = F.get(b);
-            fa[0] += fx / dist * repel; fa[1] += fy / dist * repel; fa[2] += fz / dist * repel;
-            fb[0] -= fx / dist * repel; fb[1] -= fy / dist * repel; fb[2] -= fz / dist * repel;
-          }
+      // 近距离排斥力：全对全（不分社区）——同社区的星互斥成松散云团，
+      // 收编来的伴星团也与主星云互斥、贴在外围而不穿插重叠（远距斥力≈0，球面大布局不变）
+      for (let i = 0; i < allStars.length; i++) {
+        for (let j = i + 1; j < allStars.length; j++) {
+          const a = allStars[i], b = allStars[j];
+          const fx = a.x - b.x, fy = a.y - b.y, fz = a.z - b.z;
+          const dist = Math.sqrt(fx * fx + fy * fy + fz * fz) || 1;
+          const repel = Math.min(0.8, 45 / dist) * step;
+          const fa = F.get(a), fb = F.get(b);
+          fa[0] += fx / dist * repel; fa[1] += fy / dist * repel; fa[2] += fz / dist * repel;
+          fb[0] -= fx / dist * repel; fb[1] -= fy / dist * repel; fb[2] -= fz / dist * repel;
         }
-      }
-      // 跨社区相连的星对也保持间距，避免两个社区挤成一坨
-      for (const e of edges) {
-        if (find(e.from) === find(e.to)) continue;
-        const fx = e.from.x - e.to.x, fy = e.from.y - e.to.y, fz = e.from.z - e.to.z;
-        const dist = Math.sqrt(fx * fx + fy * fy + fz * fz) || 1;
-        if (dist >= 60) continue;
-        const repel = Math.min(0.6, (60 - dist) / 60) * step;
-        const fa = F.get(e.from), fb = F.get(e.to);
-        fa[0] += fx / dist * repel; fa[1] += fy / dist * repel; fa[2] += fz / dist * repel;
-        fb[0] -= fx / dist * repel; fb[1] -= fy / dist * repel; fb[2] -= fz / dist * repel;
       }
       // 弹簧回复力：拉向社区中心（乘步长与其他力量纲一致），保持团块又不挤死
       for (const s of allStars) {
@@ -3876,7 +3973,14 @@ class WorkbenchView extends ItemView {
     let yaw = 0.4, pitch = -0.2, vyaw = 0, vpitch = 0, zoom = 1.0, t = 0;
     let dragging = false, dragMoved = false, lastX = 0, lastY = 0;
     let hover = null, idle = 0;
+    let hoverEdge = null; // 悬停的连线（无悬停星时生效，tooltip 显示两端笔记名）
     let selected = null, neighborSet = new Set();
+    // 每颗星的 wikilink 数（hover 提示用）
+    const adjCount = new Map();
+    for (const lk of edges) {
+      adjCount.set(lk.from, (adjCount.get(lk.from) || 0) + 1);
+      adjCount.set(lk.to, (adjCount.get(lk.to) || 0) + 1);
+    }
     function setSelected(s) { selected = s; neighborSet = new Set(); if (!s) return; for (const lk of edges) { if (lk.from === s) neighborSet.add(lk.to); if (lk.to === s) neighborSet.add(lk.from); } }
     const FOV = 520;
     function project(x, y, z) {
@@ -3928,17 +4032,20 @@ class WorkbenchView extends ItemView {
       // 投影笔记星
       const proj = new Map();
       for (const s of allStars) proj.set(s, project(s.x, s.y, s.z));
-      // wikilink 关联连线（选中时高亮关联，其余淡出）
+      // wikilink 关联连线（选中时高亮关联，其余淡出；缓存屏幕坐标供边命中测试）
       ctx.lineWidth = 1.0;
       for (const lk of edges) {
         const pa = proj.get(lk.from), pb = proj.get(lk.to);
-        if (!pa || !pb) continue;
+        if (!pa || !pb) { lk._ok = false; continue; }
+        lk._ok = true;
+        lk._sx = pa.sx; lk._sy = pa.sy; lk._ex = pb.sx; lk._ey = pb.sy;
         let a = Math.max(0.05, 0.4 - (pa.depth + pb.depth) / 1500);
         let glow = false;
         if (selected) {
           if (lk.from === selected || lk.to === selected) { a = Math.max(a, 0.55); glow = true; }
           else a = 0.03;
         }
+        if (lk === hoverEdge) { a = Math.max(a, 0.75); glow = true; }
         if (glow) { ctx.shadowBlur = 6; ctx.shadowColor = lk.from.color; }
         ctx.strokeStyle = lk.from.color + aHex(a);
         ctx.beginPath(); ctx.moveTo(pa.sx, pa.sy); ctx.lineTo(pb.sx, pb.sy); ctx.stroke();
@@ -4000,12 +4107,13 @@ class WorkbenchView extends ItemView {
         ctx.fillText(label, p.sx + 10 * p.scale + 4, p.sy + 3);
       }
       ctx.globalAlpha = 1;
-      // 悬浮提示
+      // 悬浮提示（星优先；无星时若悬停连线，显示连线两端的笔记名）
       if (hover) {
         const p = proj.get(hover);
         if (p) {
           const label = hover.note.name + (hover.note.excalidraw ? " 🎨" : "");
-          const sub = relTime(hover.note.mtime);
+          const lkc = adjCount.get(hover) || 0;
+          const sub = relTime(hover.note.mtime) + " · " + (lkc ? "链接 " + lkc + " 篇" : "无链接");
           ctx.font = "600 13px ui-sans-serif, system-ui, sans-serif";
           ctx.textAlign = "left";
           const w = Math.max(ctx.measureText(label).width, ctx.measureText(sub).width) + 18;
@@ -4023,6 +4131,28 @@ class WorkbenchView extends ItemView {
           ctx.fillStyle = PAL.tipSub;
           ctx.fillText(sub, tx + 9, ty + 31);
         }
+      } else if (hoverEdge && hoverEdge._ok) {
+        const l1 = hoverEdge.from.note.name + (hoverEdge.from.note.excalidraw ? " 🎨" : "");
+        const l2 = hoverEdge.to.note.name + (hoverEdge.to.note.excalidraw ? " 🎨" : "");
+        const esub = "🔗 笔记间链接（wikilink）";
+        ctx.font = "600 12px ui-sans-serif, system-ui, sans-serif";
+        ctx.textAlign = "left";
+        const w = Math.max(ctx.measureText(l1).width, ctx.measureText(l2).width, ctx.measureText(esub).width) + 18;
+        const mx = (hoverEdge._sx + hoverEdge._ex) / 2, my = (hoverEdge._sy + hoverEdge._ey) / 2;
+        let tx = mx + 12, ty = my - 52;
+        if (tx + w > canvasW - 4) tx = mx - w - 12;
+        if (ty < 4) ty = my + 12;
+        ctx.fillStyle = PAL.tipBg;
+        ctx.strokeStyle = hoverEdge.from.color + "88";
+        ctx.lineWidth = 1;
+        roundRect(ctx, tx, ty, w, 52, 7);
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = PAL.text;
+        ctx.fillText(l1, tx + 9, ty + 15);
+        ctx.fillText(l2, tx + 9, ty + 29);
+        ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
+        ctx.fillStyle = PAL.tipSub;
+        ctx.fillText(esub, tx + 9, ty + 44);
       }
       // 暗角
       const vg = ctx.createRadialGradient(cxh, cyh, Math.min(canvasW, canvasH) * 0.35, cxh, cyh, Math.max(canvasW, canvasH) * 0.75);
@@ -4034,7 +4164,7 @@ class WorkbenchView extends ItemView {
       ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
       ctx.textAlign = "left";
       ctx.fillStyle = theme === "a" ? "rgba(255,255,255,.22)" : "rgba(60,60,80,.35)";
-      ctx.fillText("拖拽旋转 · 滚轮缩放 · 点击星辰打开笔记", 12, canvasH - 12);
+      ctx.fillText("拖拽旋转 · 滚轮缩放 · 点击星辰打开笔记 · 连线 = 笔记间链接（悬停看两端）", 12, canvasH - 12);
       ctx.restore();
     }
     function hitTest(cx, cy) {
@@ -4045,6 +4175,20 @@ class WorkbenchView extends ItemView {
         const d = Math.hypot(p.sx - cx, p.sy - cy);
         const thr = Math.max(8, (1.8 + s.recency * 4) * p.scale);
         if (d < thr && d < bestD) { bestD = d; best = s; }
+      }
+      return best;
+    }
+    // 边命中测试：点到投影线段的距离（用 draw 里缓存的屏幕坐标；首帧绘制前 _ok 为 undefined，自然落空）
+    function edgeHitTest(cx, cy) {
+      let best = null, bestD = 7;
+      for (const lk of edges) {
+        if (!lk._ok) continue;
+        const ax = lk._sx, ay = lk._sy, dx = lk._ex - ax, dy = lk._ey - ay;
+        const len2 = dx * dx + dy * dy || 1;
+        let tt = ((cx - ax) * dx + (cy - ay) * dy) / len2;
+        tt = Math.max(0, Math.min(1, tt));
+        const d = Math.hypot(ax + dx * tt - cx, ay + dy * tt - cy);
+        if (d < bestD) { bestD = d; best = lk; }
       }
       return best;
     }
@@ -4061,6 +4205,7 @@ class WorkbenchView extends ItemView {
         lastX = e.clientX; lastY = e.clientY; idle = 0;
       } else {
         hover = hitTest(cx, cy);
+        hoverEdge = hover ? null : edgeHitTest(cx, cy);
         canvas.style.cursor = hover ? "pointer" : "grab";
       }
     };
@@ -4073,7 +4218,7 @@ class WorkbenchView extends ItemView {
       dragging = false;
       canvas.style.cursor = hover ? "pointer" : "grab";
     };
-    const onLeave = () => { if (!dragging) { hover = null; canvas.style.cursor = "grab"; } };
+    const onLeave = () => { if (!dragging) { hover = null; hoverEdge = null; canvas.style.cursor = "grab"; } };
     const onDbl = (e) => { const rect = canvas.getBoundingClientRect(); const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top); if (hit) this.openNote(hit.note.path); };
     const onWheel = (e) => { e.preventDefault(); zoom *= e.deltaY > 0 ? 0.92 : 1.08; zoom = Math.max(0.3, Math.min(3.5, zoom)); };
     canvas.style.cursor = "grab";
